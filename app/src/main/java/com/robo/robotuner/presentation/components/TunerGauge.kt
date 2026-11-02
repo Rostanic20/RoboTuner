@@ -1,10 +1,11 @@
 package com.robo.robotuner.presentation.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -14,153 +15,113 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.robo.robotuner.domain.model.DetectedPitch
+import com.robo.robotuner.presentation.tuner.TunerReading
 import com.robo.robotuner.ui.theme.AccentGreen
-import com.robo.robotuner.ui.theme.AccentOrange
-import com.robo.robotuner.ui.theme.AccentRed
 import com.robo.robotuner.ui.theme.DarkCard
 import com.robo.robotuner.ui.theme.TextMuted
 import kotlin.math.cos
 import kotlin.math.sin
 
-private const val GAUGE_RANGE_CENTS = 50.0
-private const val GAUGE_HALF_SWEEP = 135.0
+private const val RANGE_CENTS = 50.0
+private const val HALF_SWEEP = 120.0
+private const val TOP = 270.0
+private val LABELS = listOf(-50, -25, 0, 25, 50)
 
 @Composable
 fun TunerGauge(
-    cents: Double,
-    isInTune: Boolean,
-    isActive: Boolean,
+    reading: TunerReading?,
     modifier: Modifier = Modifier
 ) {
+    val cents = reading?.cents?.coerceIn(-RANGE_CENTS, RANGE_CENTS) ?: 0.0
     val animatedCents by animateFloatAsState(
-        targetValue = cents.coerceIn(-GAUGE_RANGE_CENTS, GAUGE_RANGE_CENTS).toFloat(),
+        targetValue = cents.toFloat(),
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "cents"
     )
+    val color by animateColorAsState(
+        targetValue = reading?.let { tuningColor(it) } ?: TextMuted,
+        animationSpec = tween(150),
+        label = "gaugeColor"
+    )
+    val textMeasurer = rememberTextMeasurer()
 
-    val indicatorColor = when {
-        !isActive -> TextMuted
-        isInTune -> AccentGreen
-        cents < 0 -> AccentRed
-        else -> AccentOrange
-    }
+    Canvas(modifier = modifier) {
+        val stroke = size.minDimension * 0.035f
+        val radius = size.minDimension / 2 - stroke
+        val center = Offset(size.width / 2, size.height / 2)
 
-    Canvas(modifier = modifier.size(280.dp)) {
-        val strokeWidth = 12.dp.toPx()
-        val padding = 24.dp.toPx()
-        val arcSize = Size(size.width - padding * 2, size.height - padding * 2)
-        val topLeft = Offset(padding, padding)
+        drawArcSegment(center, radius, -RANGE_CENTS, RANGE_CENTS, DarkCard, stroke)
+        drawArcSegment(
+            center, radius,
+            -DetectedPitch.IN_TUNE_THRESHOLD, DetectedPitch.IN_TUNE_THRESHOLD,
+            AccentGreen.copy(alpha = 0.3f), stroke
+        )
+        drawScale(center, radius - stroke * 1.6f, textMeasurer)
 
-        drawArcBackground(topLeft, arcSize, strokeWidth)
-        drawTicks(size.width / 2, size.height / 2, arcSize.width / 2 - strokeWidth)
-
-        if (isActive) {
-            drawIndicator(
-                centerX = size.width / 2,
-                centerY = size.height / 2,
-                radius = arcSize.width / 2 - strokeWidth / 2,
-                cents = animatedCents,
-                color = indicatorColor,
-                isInTune = isInTune
-            )
+        if (reading != null) {
+            drawArcSegment(center, radius, 0.0, animatedCents.toDouble(), color.copy(alpha = 0.85f), stroke)
+            val knob = pointOnArc(center, radius, animatedCents.toDouble())
+            drawCircle(color.copy(alpha = 0.25f), radius = stroke * 1.6f, center = knob)
+            drawCircle(color, radius = stroke * 0.95f, center = knob)
         }
     }
 }
 
-private fun DrawScope.drawArcBackground(topLeft: Offset, arcSize: Size, strokeWidth: Float) {
-    drawArc(
-        color = DarkCard,
-        startAngle = 135f,
-        sweepAngle = 270f,
-        useCenter = false,
-        topLeft = topLeft,
-        size = arcSize,
-        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-    )
+private fun angleFor(cents: Double) = TOP + cents / RANGE_CENTS * HALF_SWEEP
 
-    val inTuneSweep = (DetectedPitch.IN_TUNE_THRESHOLD / GAUGE_RANGE_CENTS * GAUGE_HALF_SWEEP * 2).toFloat()
+private fun pointOnArc(center: Offset, radius: Float, cents: Double): Offset {
+    val angle = Math.toRadians(angleFor(cents))
+    return Offset(center.x + radius * cos(angle).toFloat(), center.y + radius * sin(angle).toFloat())
+}
+
+private fun DrawScope.drawArcSegment(
+    center: Offset,
+    radius: Float,
+    fromCents: Double,
+    toCents: Double,
+    color: Color,
+    stroke: Float
+) {
+    val start = angleFor(minOf(fromCents, toCents))
+    val sweep = angleFor(maxOf(fromCents, toCents)) - start
+    if (sweep <= 0.0) return
     drawArc(
-        color = AccentGreen.copy(alpha = 0.15f),
-        startAngle = 270f - inTuneSweep / 2,
-        sweepAngle = inTuneSweep,
+        color = color,
+        startAngle = start.toFloat(),
+        sweepAngle = sweep.toFloat(),
         useCenter = false,
-        topLeft = topLeft,
-        size = arcSize,
-        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        topLeft = Offset(center.x - radius, center.y - radius),
+        size = Size(radius * 2, radius * 2),
+        style = Stroke(width = stroke, cap = StrokeCap.Round)
     )
 }
 
-private fun DrawScope.drawTicks(centerX: Float, centerY: Float, radius: Float) {
-    val tickCount = 11
-    val startAngle = 135.0
-    val sweepAngle = 270.0
-
-    for (i in 0 until tickCount) {
-        val angle = Math.toRadians(startAngle + (sweepAngle / (tickCount - 1)) * i)
-        val isCenterTick = i == tickCount / 2
-        val isMainTick = i % 2 == 0
-
-        val innerRadius = radius - when {
-            isCenterTick -> 25.dp.toPx()
-            isMainTick -> 18.dp.toPx()
-            else -> 10.dp.toPx()
-        }
-        val outerRadius = radius - 4.dp.toPx()
-
-        val startX = centerX + innerRadius * cos(angle).toFloat()
-        val startY = centerY + innerRadius * sin(angle).toFloat()
-        val endX = centerX + outerRadius * cos(angle).toFloat()
-        val endY = centerY + outerRadius * sin(angle).toFloat()
-
-        val tickColor = when {
-            isCenterTick -> AccentGreen
-            else -> TextMuted
-        }
-
+private fun DrawScope.drawScale(center: Offset, radius: Float, textMeasurer: TextMeasurer) {
+    for (cents in -50..50 step 5) {
+        val major = cents % 25 == 0
+        val length = if (major) radius * 0.09f else radius * 0.045f
+        val outer = pointOnArc(center, radius, cents.toDouble())
+        val inner = pointOnArc(center, radius - length, cents.toDouble())
         drawLine(
-            color = tickColor,
-            start = Offset(startX, startY),
-            end = Offset(endX, endY),
-            strokeWidth = if (isCenterTick) 3.dp.toPx() else 2.dp.toPx(),
+            color = if (cents == 0) AccentGreen else TextMuted.copy(alpha = if (major) 1f else 0.5f),
+            start = inner,
+            end = outer,
+            strokeWidth = if (major) 2.dp.toPx() else 1.dp.toPx(),
             cap = StrokeCap.Round
         )
     }
-}
-
-private fun DrawScope.drawIndicator(
-    centerX: Float,
-    centerY: Float,
-    radius: Float,
-    cents: Float,
-    color: Color,
-    isInTune: Boolean
-) {
-    val angle = Math.toRadians(270.0 + cents / GAUGE_RANGE_CENTS * GAUGE_HALF_SWEEP)
-
-    val indicatorLength = radius - 30.dp.toPx()
-    val endX = centerX + indicatorLength * cos(angle).toFloat()
-    val endY = centerY + indicatorLength * sin(angle).toFloat()
-
-    drawLine(
-        color = color,
-        start = Offset(centerX, centerY),
-        end = Offset(endX, endY),
-        strokeWidth = 4.dp.toPx(),
-        cap = StrokeCap.Round
-    )
-
-    val dotRadius = if (isInTune) 14.dp.toPx() else 10.dp.toPx()
-    drawCircle(
-        color = color,
-        radius = dotRadius,
-        center = Offset(endX, endY)
-    )
-
-    drawCircle(
-        color = DarkCard,
-        radius = 8.dp.toPx(),
-        center = Offset(centerX, centerY)
-    )
+    val labelStyle = TextStyle(color = TextMuted, fontSize = (radius * 0.075f / density / fontScale).sp)
+    for (cents in LABELS) {
+        val text = if (cents > 0) "+$cents" else "$cents"
+        val layout = textMeasurer.measure(text, labelStyle)
+        val anchor = pointOnArc(center, radius * 0.8f, cents.toDouble())
+        drawText(layout, topLeft = Offset(anchor.x - layout.size.width / 2f, anchor.y - layout.size.height / 2f))
+    }
 }

@@ -1,3 +1,24 @@
 <resources>
-    <string name="app_name">Robo Tuner</string>
+    <string name="app_name">RoboTuner</string>
+    <string name="cents_value">%1$s cents</string>
+    <string name="frequency_value">%1$.1f Hz</string>
+    <string name="play_a_string">Play a string</string>
+    <string name="tuner_off">Tuner is off</string>
+    <string name="tune_up">Tune up</string>
+    <string name="tune_down">Tune down</string>
+    <string name="in_tune">In tune</string>
+    <string name="mode_auto">Auto: tap a string to lock it</string>
+    <string name="mode_locked">String %1$d locked: tap it again for auto</string>
+    <string name="string_chip_description">String %1$d, %2$s</string>
+    <string name="string_state_locked">locked</string>
+    <string name="string_state_tuned">tuned</string>
+    <string name="string_state_active">playing</string>
+    <string name="start_tuner">Start tuner</string>
+    <string name="stop_tuner">Stop tuner</string>
+    <string name="listening">Listening</string>
+    <string name="tap_to_start">Tap to start</string>
+    <string name="mic_needed">RoboTuner needs the microphone to hear your instrument.</string>
+    <string name="allow_mic">Allow microphone</string>
+    <string name="open_settings">Open settings</string>
+    <string name="reading_description">%1$s, %2$s</string>
 </resources>

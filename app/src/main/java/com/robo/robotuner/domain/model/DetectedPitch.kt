@@ -9,15 +9,6 @@ data class DetectedPitch(
     val cents: Double,
     val targetFrequency: Double
 ) {
-    val isInTune: Boolean
-        get() = abs(cents) <= IN_TUNE_THRESHOLD
-
-    val isFlat: Boolean
-        get() = cents < -IN_TUNE_THRESHOLD
-
-    val isSharp: Boolean
-        get() = cents > IN_TUNE_THRESHOLD
-
     companion object {
         const val IN_TUNE_THRESHOLD = 3.0
         private const val NOTE_HOLD_CENTS = 60.0
