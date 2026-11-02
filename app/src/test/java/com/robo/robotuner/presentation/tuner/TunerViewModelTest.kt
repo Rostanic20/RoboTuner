@@ -1,13 +1,19 @@
 package com.robo.robotuner.presentation.tuner
 
 import com.robo.robotuner.domain.model.Note
+import com.robo.robotuner.domain.model.Tuning
+import com.robo.robotuner.domain.model.TunerSettings
 import com.robo.robotuner.domain.repository.AudioRepository
 import com.robo.robotuner.domain.repository.PitchDetectorRepository
+import com.robo.robotuner.domain.repository.SettingsRepository
 import com.robo.robotuner.domain.usecase.DetectPitchUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -41,12 +47,18 @@ class TunerViewModelTest {
         override fun reset() = Unit
     }
 
+    private val settings = object : SettingsRepository {
+        private val state = MutableStateFlow(TunerSettings())
+        override val settings: StateFlow<TunerSettings> = state
+        override fun update(transform: (TunerSettings) -> TunerSettings) = state.update { transform(it).sanitized() }
+    }
+
     private lateinit var viewModel: TunerViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        viewModel = TunerViewModel(DetectPitchUseCase(audio, detector, dispatcher))
+        viewModel = TunerViewModel(DetectPitchUseCase(audio, detector, dispatcher), settings)
     }
 
     @After
@@ -122,6 +134,37 @@ class TunerViewModelTest {
         testScheduler.runCurrent()
         assertFalse(viewModel.uiState.value.isListening)
         assertNull(viewModel.uiState.value.reading)
+    }
+
+    @Test
+    fun `vibration off still marks the string tuned but sends no event`() = listeningTest {
+        settings.update { it.copy(vibration = false) }
+        val events = mutableListOf<Unit>()
+        backgroundScope.launch { viewModel.inTuneEvents.collect { events += it } }
+        hear(110.0, millis = 600)
+        assertEquals(setOf(1), viewModel.uiState.value.tunedStrings)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `changing tuning clears the tuned checklist and retargets the strings`() = listeningTest {
+        hear(110.0, millis = 600)
+        assertEquals(setOf(1), viewModel.uiState.value.tunedStrings)
+
+        settings.update { it.copy(tuning = Tuning.DROP_D) }
+        hear(73.42)
+        assertTrue(viewModel.uiState.value.tunedStrings.isEmpty())
+        assertEquals(Note.D, viewModel.uiState.value.reading!!.note)
+        assertEquals(0, viewModel.uiState.value.reading!!.stringIndex)
+    }
+
+    @Test
+    fun `changing reference pitch applies to the current note immediately`() = listeningTest {
+        hear(440.0)
+        assertEquals(0.0, viewModel.uiState.value.reading!!.cents, 0.01)
+        settings.update { it.copy(referenceA4 = 442.0) }
+        hear(440.0)
+        assertEquals(-7.85, viewModel.uiState.value.reading!!.cents, 0.01)
     }
 
     private companion object {

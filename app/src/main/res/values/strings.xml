@@ -21,4 +21,22 @@
     <string name="allow_mic">Allow microphone</string>
     <string name="open_settings">Open settings</string>
     <string name="reading_description">%1$s, %2$s</string>
+    <string name="settings">Settings</string>
+    <string name="change_tuning">Change tuning, current %1$s</string>
+    <string name="tuning">Tuning</string>
+    <string name="tuning_standard">Standard</string>
+    <string name="tuning_drop_d">Drop D</string>
+    <string name="tuning_half_step_down">Half step down</string>
+    <string name="tuning_dadgad">DADGAD</string>
+    <string name="tuning_open_g">Open G</string>
+    <string name="tuning_open_d">Open D</string>
+    <string name="reference_pitch">Reference pitch (A4)</string>
+    <string name="reference_value">%1$d Hz</string>
+    <string name="reset_to_440">Reset to 440</string>
+    <string name="tolerance">In-tune tolerance (cents)</string>
+    <string name="tolerance_value">&#177;%1$d</string>
+    <string name="vibrate_in_tune">Vibrate when in tune</string>
+    <string name="note_names">Note names</string>
+    <string name="sharps">Sharps (A#)</string>
+    <string name="flats">Flats (Bb)</string>
 </resources>

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.robo.robotuner.data.audio.AudioRecorder
 import com.robo.robotuner.data.audio.PitchPipeline
 import com.robo.robotuner.data.repository.AudioRepositoryImpl
+import com.robo.robotuner.data.repository.SharedPrefsSettingsRepository
 import com.robo.robotuner.domain.usecase.DetectPitchUseCase
 
 class TunerViewModelFactory(
@@ -15,12 +16,13 @@ class TunerViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TunerViewModel::class.java)) {
-            val audioRecorder = AudioRecorder(context.applicationContext)
+            val appContext = context.applicationContext
+            val audioRecorder = AudioRecorder(appContext)
             val detectPitchUseCase = DetectPitchUseCase(
                 audioRepository = AudioRepositoryImpl(audioRecorder),
                 pitchDetectorRepository = PitchPipeline(audioRecorder.sampleRate)
             )
-            return TunerViewModel(detectPitchUseCase) as T
+            return TunerViewModel(detectPitchUseCase, SharedPrefsSettingsRepository.get(appContext)) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

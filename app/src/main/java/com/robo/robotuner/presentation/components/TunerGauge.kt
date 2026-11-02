@@ -21,7 +21,6 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.presentation.tuner.TunerReading
 import com.robo.robotuner.ui.theme.AccentGreen
 import com.robo.robotuner.ui.theme.DarkCard
@@ -37,6 +36,7 @@ private val LABELS = listOf(-50, -25, 0, 25, 50)
 @Composable
 fun TunerGauge(
     reading: TunerReading?,
+    toleranceCents: Double,
     modifier: Modifier = Modifier
 ) {
     val cents = reading?.cents?.coerceIn(-RANGE_CENTS, RANGE_CENTS) ?: 0.0
@@ -60,7 +60,7 @@ fun TunerGauge(
         drawArcSegment(center, radius, -RANGE_CENTS, RANGE_CENTS, DarkCard, stroke)
         drawArcSegment(
             center, radius,
-            -DetectedPitch.IN_TUNE_THRESHOLD, DetectedPitch.IN_TUNE_THRESHOLD,
+            -toleranceCents, toleranceCents,
             AccentGreen.copy(alpha = 0.3f), stroke
         )
         drawScale(center, radius - stroke * 1.6f, textMeasurer)

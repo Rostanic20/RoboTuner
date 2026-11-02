@@ -2,8 +2,8 @@ package com.robo.robotuner.presentation.tuner
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.robo.robotuner.domain.model.GuitarString
 import com.robo.robotuner.domain.model.TunerState
+import com.robo.robotuner.domain.repository.SettingsRepository
 import com.robo.robotuner.domain.usecase.DetectPitchUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -24,26 +25,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class TunerViewModel(
-    private val detectPitchUseCase: DetectPitchUseCase
+    private val detectPitchUseCase: DetectPitchUseCase,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val tunerState = MutableStateFlow<TunerState>(TunerState.Idle)
     private val isListening = MutableStateFlow(false)
     private val lockedString = MutableStateFlow<Int?>(null)
     private val tunedStrings = MutableStateFlow<Set<Int>>(emptySet())
-    private val strings = GuitarString.STANDARD
+    private val readingMapper = ReadingMapper()
 
     val uiState: StateFlow<TunerUiState> =
-        combine(tunerState, isListening, lockedString, tunedStrings) { state, listening, locked, tuned ->
+        combine(tunerState, isListening, lockedString, tunedStrings, settingsRepository.settings) {
+                state, listening, locked, tuned, settings ->
             TunerUiState(
                 isListening = listening,
-                reading = (state as? TunerState.Detected)?.pitch?.let { TunerReading.from(it, strings, locked) },
-                strings = strings,
+                reading = readingMapper.map((state as? TunerState.Detected)?.frequency, settings, locked),
+                settings = settings,
                 lockedString = locked,
                 tunedStrings = tuned,
                 error = (state as? TunerState.Error)?.message
             )
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, TunerUiState(strings = strings))
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, TunerUiState(settings = settingsRepository.settings.value))
 
     private val inTuneChannel = Channel<Unit>(Channel.CONFLATED)
     val inTuneEvents: Flow<Unit> = inTuneChannel.receiveAsFlow()
@@ -60,8 +63,15 @@ class TunerViewModel(
                     if (inTune == null) return@collectLatest
                     delay(IN_TUNE_HOLD_MS)
                     inTune.third?.let { index -> tunedStrings.update { it + index } }
-                    inTuneChannel.send(Unit)
+                    if (settingsRepository.settings.value.vibration) inTuneChannel.send(Unit)
                 }
+        }
+        viewModelScope.launch {
+            settingsRepository.settings
+                .map { it.tuning to it.referenceA4 }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { tunedStrings.value = emptySet() }
         }
     }
 
