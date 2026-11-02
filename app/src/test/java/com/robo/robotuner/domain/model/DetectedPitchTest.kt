@@ -30,11 +30,4 @@ class DetectedPitchTest {
         assertEquals(Note.A_SHARP, pitch.note)
         assertEquals(2, pitch.octave)
     }
-
-    @Test
-    fun `in tune within 3 cents`() {
-        assertEquals(true, DetectedPitch.fromFrequency(cents(110.0, 2.9)).isInTune)
-        assertEquals(true, DetectedPitch.fromFrequency(cents(110.0, 3.1)).isSharp)
-        assertEquals(true, DetectedPitch.fromFrequency(cents(110.0, -3.1)).isFlat)
-    }
 }

@@ -1,238 +1,206 @@
 package com.robo.robotuner.presentation.tuner
 
 import android.Manifest
-import android.content.Context
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.robo.robotuner.domain.model.TunerState
-import com.robo.robotuner.presentation.components.GuitarStringIndicator
-import com.robo.robotuner.presentation.components.NoteDisplay
+import com.robo.robotuner.R
+import com.robo.robotuner.presentation.components.MicButton
+import com.robo.robotuner.presentation.components.ReadingDisplay
+import com.robo.robotuner.presentation.components.StatusAction
+import com.robo.robotuner.presentation.components.StatusMessage
+import com.robo.robotuner.presentation.components.StringSelector
+import com.robo.robotuner.presentation.components.TuneHint
 import com.robo.robotuner.presentation.components.TunerGauge
-import com.robo.robotuner.ui.theme.AccentGreen
-import com.robo.robotuner.ui.theme.AccentOrange
-import com.robo.robotuner.ui.theme.AccentRed
 import com.robo.robotuner.ui.theme.DarkBackground
-import com.robo.robotuner.ui.theme.DarkCard
-import com.robo.robotuner.ui.theme.TextMuted
 import com.robo.robotuner.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
+
+private enum class MicPermission { Unknown, Denied, PermanentlyDenied }
+
+private const val MAX_GAUGE_SIZE = 380
 
 @Composable
 fun TunerScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val viewModel: TunerViewModel = viewModel(factory = TunerViewModelFactory(context))
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val tunerState by viewModel.tunerState.collectAsStateWithLifecycle()
-    val isListening by viewModel.isListening.collectAsStateWithLifecycle()
+    var permission by rememberSaveable { mutableStateOf(MicPermission.Unknown) }
+    var autoStartDone by rememberSaveable { mutableStateOf(false) }
 
-    var showPermissionRationale by remember { mutableStateOf(false) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            viewModel.startListening()
-        } else {
-            showPermissionRationale = true
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permission = when {
+            granted -> MicPermission.Unknown
+            context.canAskForMicAgain() -> MicPermission.Denied
+            else -> MicPermission.PermanentlyDenied
         }
+        if (granted) viewModel.startListening()
+    }
+    val requestMic = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+
+    LaunchedEffect(Unit) {
+        if (autoStartDone) return@LaunchedEffect
+        autoStartDone = true
+        if (context.hasMicPermission()) viewModel.startListening() else requestMic()
     }
 
     LifecycleStartEffect(viewModel) {
-        viewModel.onScreenVisible()
+        if (permission != MicPermission.Unknown && context.hasMicPermission()) {
+            permission = MicPermission.Unknown
+            viewModel.startListening()
+        } else {
+            viewModel.onScreenVisible()
+        }
         onStopOrDispose { viewModel.onScreenHidden() }
     }
 
-    val currentPitch = (tunerState as? TunerState.Detected)?.pitch
-    val isInTune = currentPitch?.isInTune == true
-
-    LaunchedEffect(isInTune) {
-        if (isInTune) {
-            delay(IN_TUNE_VIBRATION_DELAY_MS)
-            vibrateInTune(context)
-        }
+    val view = LocalView.current
+    DisposableEffect(state.isListening) {
+        view.keepScreenOn = state.isListening
+        onDispose { view.keepScreenOn = false }
     }
 
-    Box(
+    LaunchedEffect(viewModel) {
+        viewModel.inTuneEvents.collect { context.vibrateInTune() }
+    }
+
+    val onMicClick = {
+        when {
+            state.isListening -> viewModel.stopListening()
+            context.hasMicPermission() -> viewModel.startListening()
+            permission == MicPermission.PermanentlyDenied -> context.openAppSettings()
+            else -> requestMic()
+        }
+    }
+    val statusMessage = if (permission != MicPermission.Unknown) stringResource(R.string.mic_needed) else state.error
+    val statusAction = when (permission) {
+        MicPermission.Denied -> StatusAction(R.string.allow_mic, requestMic)
+        MicPermission.PermanentlyDenied -> StatusAction(R.string.open_settings) { context.openAppSettings() }
+        MicPermission.Unknown -> null
+    }
+
+    TunerContent(
+        state = state,
+        onMicClick = onMicClick,
+        onStringClick = viewModel::toggleStringLock,
+        status = { StatusMessage(statusMessage, statusAction) },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun TunerContent(
+    state: TunerUiState,
+    onMicClick: () -> Unit,
+    onStringClick: (Int) -> Unit,
+    status: @Composable () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBackground)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Text(
-                text = "RoboTuner",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextSecondary
+        val strings: @Composable (Modifier) -> Unit = { m ->
+            StringSelector(
+                strings = state.strings,
+                reading = state.reading,
+                lockedString = state.lockedString,
+                tunedStrings = state.tunedStrings,
+                onStringClick = onStringClick,
+                modifier = m
             )
+        }
+        val controls: @Composable ColumnScope.() -> Unit = {
+            status()
+            MicButton(isListening = state.isListening, onClick = onMicClick)
+        }
 
-            Spacer(modifier = Modifier.weight(0.5f))
-
-            // Guitar string indicator
-            GuitarStringIndicator(
-                currentPitch = currentPitch,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Box(contentAlignment = Alignment.Center) {
-                TunerGauge(
-                    cents = currentPitch?.cents ?: 0.0,
-                    isInTune = isInTune,
-                    isActive = isListening
-                )
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    NoteDisplay(pitch = currentPitch)
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    val centsText = currentPitch?.let {
-                        val rounded = it.cents.roundToInt()
-                        if (rounded > 0) "+$rounded" else "$rounded"
-                    } ?: "-"
-
-                    val centsColor by animateColorAsState(
-                        targetValue = when {
-                            currentPitch == null -> TextMuted
-                            isInTune -> AccentGreen
-                            currentPitch.isFlat -> AccentRed
-                            else -> AccentOrange
-                        },
-                        animationSpec = tween(150),
-                        label = "centsColor"
-                    )
-
-                    Text(
-                        text = "$centsText cents",
-                        fontSize = 18.sp,
-                        color = centsColor
-                    )
+        if (maxWidth > maxHeight) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GaugeArea(state, Modifier.weight(1f).fillMaxHeight())
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    strings(Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
+                    controls()
                 }
             }
-
-            Spacer(modifier = Modifier.weight(0.5f))
-
-            val errorText = when {
-                showPermissionRationale -> "Microphone access needed"
-                tunerState is TunerState.Error -> (tunerState as TunerState.Error).message
-                else -> null
-            }
-            if (errorText != null) {
-                Text(
-                    text = errorText,
-                    color = AccentRed,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-            }
-
-            val buttonColor by animateColorAsState(
-                targetValue = if (isListening) AccentGreen else DarkCard,
-                animationSpec = tween(200),
-                label = "buttonColor"
-            )
-
-            val buttonBorderColor by animateColorAsState(
-                targetValue = if (isListening) AccentGreen else TextMuted,
-                animationSpec = tween(200),
-                label = "borderColor"
-            )
-
-            val buttonScale by animateFloatAsState(
-                targetValue = if (isListening) 1.1f else 1f,
-                animationSpec = tween(200),
-                label = "scale"
-            )
-
-            Box(
+        } else {
+            Column(
                 modifier = Modifier
-                    .size((64 * buttonScale).dp)
-                    .clip(CircleShape)
-                    .background(buttonColor)
-                    .border(2.dp, buttonBorderColor, CircleShape)
-                    .clickable {
-                        if (isListening) {
-                            viewModel.stopListening()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = if (isListening) "ON" else "OFF",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isListening) DarkBackground else TextSecondary
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
+                Spacer(Modifier.height(16.dp))
+                strings(Modifier.fillMaxWidth())
+                GaugeArea(state, Modifier.weight(1f).fillMaxWidth())
+                controls()
             }
-
-            Spacer(modifier = Modifier.height(48.dp))
         }
     }
 }
 
-private const val IN_TUNE_VIBRATION_DELAY_MS = 400L
-
-@Suppress("DEPRECATION")
-private fun vibrateInTune(context: Context) {
-    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        vibratorManager.defaultVibrator
-    } else {
-        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-    } else {
-        vibrator.vibrate(50)
+@Composable
+private fun GaugeArea(state: TunerUiState, modifier: Modifier) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val side: Dp = minOf(maxWidth, maxHeight, MAX_GAUGE_SIZE.dp)
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(side)) {
+            TunerGauge(reading = state.reading, modifier = Modifier.fillMaxSize())
+            ReadingDisplay(reading = state.reading, isListening = state.isListening, gaugeSize = side)
+            TuneHint(
+                reading = state.reading,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = side * 0.04f)
+            )
+        }
     }
 }

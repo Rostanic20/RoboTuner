@@ -4,6 +4,7 @@ import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.domain.repository.AudioRepository
 import com.robo.robotuner.domain.repository.PitchDetectorRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.conflate
@@ -12,7 +13,8 @@ import kotlinx.coroutines.flow.flowOn
 
 class DetectPitchUseCase(
     private val audioRepository: AudioRepository,
-    private val pitchDetectorRepository: PitchDetectorRepository
+    private val pitchDetectorRepository: PitchDetectorRepository,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     fun execute(): Flow<TunerState> = flow {
         pitchDetectorRepository.reset()
@@ -23,5 +25,5 @@ class DetectPitchUseCase(
             previous = pitch
             emit(if (pitch != null) TunerState.Detected(pitch) else TunerState.Listening)
         }
-    }.flowOn(Dispatchers.Default).conflate()
+    }.flowOn(dispatcher).conflate()
 }

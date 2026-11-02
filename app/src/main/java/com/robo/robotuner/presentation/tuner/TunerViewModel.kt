@@ -2,28 +2,68 @@ package com.robo.robotuner.presentation.tuner
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.robo.robotuner.domain.model.GuitarString
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.domain.usecase.DetectPitchUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class TunerViewModel(
     private val detectPitchUseCase: DetectPitchUseCase
 ) : ViewModel() {
 
-    private val _tunerState = MutableStateFlow<TunerState>(TunerState.Idle)
-    val tunerState: StateFlow<TunerState> = _tunerState.asStateFlow()
+    private val tunerState = MutableStateFlow<TunerState>(TunerState.Idle)
+    private val isListening = MutableStateFlow(false)
+    private val lockedString = MutableStateFlow<Int?>(null)
+    private val tunedStrings = MutableStateFlow<Set<Int>>(emptySet())
+    private val strings = GuitarString.STANDARD
 
-    private val _isListening = MutableStateFlow(false)
-    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
+    val uiState: StateFlow<TunerUiState> =
+        combine(tunerState, isListening, lockedString, tunedStrings) { state, listening, locked, tuned ->
+            TunerUiState(
+                isListening = listening,
+                reading = (state as? TunerState.Detected)?.pitch?.let { TunerReading.from(it, strings, locked) },
+                strings = strings,
+                lockedString = locked,
+                tunedStrings = tuned,
+                error = (state as? TunerState.Error)?.message
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, TunerUiState(strings = strings))
+
+    private val inTuneChannel = Channel<Unit>(Channel.CONFLATED)
+    val inTuneEvents: Flow<Unit> = inTuneChannel.receiveAsFlow()
 
     private var listeningJob: Job? = null
     private var wantsListening = false
+
+    init {
+        viewModelScope.launch {
+            uiState
+                .map { state -> state.reading?.takeIf { it.isInTune }?.let { Triple(it.note, it.octave, it.stringIndex) } }
+                .distinctUntilChanged()
+                .collectLatest { inTune ->
+                    if (inTune == null) return@collectLatest
+                    delay(IN_TUNE_HOLD_MS)
+                    inTune.third?.let { index -> tunedStrings.update { it + index } }
+                    inTuneChannel.send(Unit)
+                }
+        }
+    }
 
     fun startListening() {
         wantsListening = true
@@ -43,20 +83,24 @@ class TunerViewModel(
         halt()
     }
 
+    fun toggleStringLock(index: Int) {
+        lockedString.update { if (it == index) null else index }
+    }
+
     private fun listen() {
         if (listeningJob?.isActive == true) return
         val previousJob = listeningJob
-        _isListening.value = true
-        _tunerState.value = TunerState.Listening
+        isListening.value = true
+        tunerState.value = TunerState.Listening
         listeningJob = viewModelScope.launch {
             previousJob?.cancelAndJoin()
             detectPitchUseCase.execute()
                 .catch { e ->
                     wantsListening = false
-                    _isListening.value = false
-                    _tunerState.value = TunerState.Error(e.message ?: "Unknown error")
+                    isListening.value = false
+                    tunerState.value = TunerState.Error(e.message ?: "Unknown error")
                 }
-                .collect { _tunerState.value = it }
+                .collect { tunerState.value = it }
         }
     }
 
@@ -64,7 +108,11 @@ class TunerViewModel(
         val job = listeningJob ?: return
         if (!job.isActive) return
         job.cancel()
-        _isListening.value = false
-        _tunerState.value = TunerState.Idle
+        isListening.value = false
+        tunerState.value = TunerState.Idle
+    }
+
+    companion object {
+        const val IN_TUNE_HOLD_MS = 400L
     }
 }
