@@ -1,6 +1,5 @@
 package com.robo.robotuner.domain.usecase
 
-import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.domain.repository.AudioRepository
 import com.robo.robotuner.domain.repository.PitchDetectorRepository
@@ -18,12 +17,9 @@ class DetectPitchUseCase(
 ) {
     fun execute(): Flow<TunerState> = flow {
         pitchDetectorRepository.reset()
-        var previous: DetectedPitch? = null
         audioRepository.startListening().collect { samples ->
-            val pitch = pitchDetectorRepository.detectPitch(samples)
-                ?.let { DetectedPitch.fromFrequency(it, previous) }
-            previous = pitch
-            emit(if (pitch != null) TunerState.Detected(pitch) else TunerState.Listening)
+            val frequency = pitchDetectorRepository.detectPitch(samples)
+            emit(if (frequency != null) TunerState.Detected(frequency) else TunerState.Listening)
         }
     }.flowOn(dispatcher).conflate()
 }

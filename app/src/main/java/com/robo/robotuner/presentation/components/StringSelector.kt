@@ -46,6 +46,7 @@ fun StringSelector(
     reading: TunerReading?,
     lockedString: Int?,
     tunedStrings: Set<Int>,
+    useFlats: Boolean,
     onStringClick: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -62,6 +63,7 @@ fun StringSelector(
                     isInTune = reading?.stringIndex == index && reading.isInTune,
                     isLocked = lockedString == index,
                     isTuned = index in tunedStrings,
+                    useFlats = useFlats,
                     onClick = { onStringClick(index) }
                 )
             }
@@ -87,6 +89,7 @@ private fun StringChip(
     isInTune: Boolean,
     isLocked: Boolean,
     isTuned: Boolean,
+    useFlats: Boolean,
     onClick: () -> Unit
 ) {
     val background by animateColorAsState(
@@ -111,7 +114,7 @@ private fun StringChip(
     val description = stringResource(
         R.string.string_chip_description,
         number,
-        (listOf("${string.note.displayName}${string.octave}") + states).joinToString(", ")
+        (listOf("${string.note.label(useFlats)}${string.octave}") + states).joinToString(", ")
     )
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -133,7 +136,7 @@ private fun StringChip(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = string.note.displayName,
+                        text = string.note.label(useFlats),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = content

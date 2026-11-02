@@ -27,6 +27,7 @@ import kotlin.math.roundToInt
 fun ReadingDisplay(
     reading: TunerReading?,
     isListening: Boolean,
+    useFlats: Boolean,
     gaugeSize: Dp,
     modifier: Modifier = Modifier
 ) {
@@ -51,7 +52,7 @@ fun ReadingDisplay(
     val centsText = stringResource(R.string.cents_value, formatCents(reading.cents))
     val description = stringResource(
         R.string.reading_description,
-        "${reading.note.displayName}${reading.octave}",
+        "${reading.note.label(useFlats)}${reading.octave}",
         centsText
     )
     Column(
@@ -60,7 +61,7 @@ fun ReadingDisplay(
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = reading.note.displayName,
+                text = reading.note.label(useFlats),
                 fontSize = noteSize,
                 fontWeight = FontWeight.Bold,
                 color = color

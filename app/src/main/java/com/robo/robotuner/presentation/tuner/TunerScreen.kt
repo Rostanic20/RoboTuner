@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -38,14 +36,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robo.robotuner.R
 import com.robo.robotuner.presentation.components.MicButton
+import com.robo.robotuner.presentation.components.SettingsActions
+import com.robo.robotuner.presentation.components.SettingsSheet
+import com.robo.robotuner.presentation.components.TopBar
 import com.robo.robotuner.presentation.components.ReadingDisplay
 import com.robo.robotuner.presentation.components.StatusAction
 import com.robo.robotuner.presentation.components.StatusMessage
 import com.robo.robotuner.presentation.components.StringSelector
 import com.robo.robotuner.presentation.components.TuneHint
 import com.robo.robotuner.presentation.components.TunerGauge
+import com.robo.robotuner.presentation.settings.SettingsViewModel
 import com.robo.robotuner.ui.theme.DarkBackground
-import com.robo.robotuner.ui.theme.TextSecondary
 
 private enum class MicPermission { Unknown, Denied, PermanentlyDenied }
 
@@ -59,6 +60,7 @@ fun TunerScreen(modifier: Modifier = Modifier) {
 
     var permission by rememberSaveable { mutableStateOf(MicPermission.Unknown) }
     var autoStartDone by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permission = when {
@@ -115,9 +117,26 @@ fun TunerScreen(modifier: Modifier = Modifier) {
         state = state,
         onMicClick = onMicClick,
         onStringClick = viewModel::toggleStringLock,
+        onOpenSettings = { showSettings = true },
         status = { StatusMessage(statusMessage, statusAction) },
         modifier = modifier
     )
+
+    if (showSettings) {
+        val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(context))
+        val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+        SettingsSheet(
+            settings = settings,
+            actions = SettingsActions(
+                onTuning = settingsViewModel::setTuning,
+                onReferenceA4 = settingsViewModel::setReferenceA4,
+                onTolerance = settingsViewModel::setTolerance,
+                onVibration = settingsViewModel::setVibration,
+                onUseFlats = settingsViewModel::setUseFlats
+            ),
+            onDismiss = { showSettings = false }
+        )
+    }
 }
 
 @Composable
@@ -125,6 +144,7 @@ private fun TunerContent(
     state: TunerUiState,
     onMicClick: () -> Unit,
     onStringClick: (Int) -> Unit,
+    onOpenSettings: () -> Unit,
     status: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -139,9 +159,13 @@ private fun TunerContent(
                 reading = state.reading,
                 lockedString = state.lockedString,
                 tunedStrings = state.tunedStrings,
+                useFlats = state.settings.useFlats,
                 onStringClick = onStringClick,
                 modifier = m
             )
+        }
+        val topBar: @Composable () -> Unit = {
+            TopBar(tuning = state.settings.tuning, onOpenSettings = onOpenSettings)
         }
         val controls: @Composable ColumnScope.() -> Unit = {
             status()
@@ -161,6 +185,8 @@ private fun TunerContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
+                    topBar()
+                    Spacer(Modifier.height(8.dp))
                     strings(Modifier.fillMaxWidth())
                     Spacer(Modifier.height(16.dp))
                     controls()
@@ -173,13 +199,8 @@ private fun TunerContent(
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                Spacer(Modifier.height(16.dp))
+                topBar()
+                Spacer(Modifier.height(8.dp))
                 strings(Modifier.fillMaxWidth())
                 GaugeArea(state, Modifier.weight(1f).fillMaxWidth())
                 controls()
@@ -193,8 +214,17 @@ private fun GaugeArea(state: TunerUiState, modifier: Modifier) {
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val side: Dp = minOf(maxWidth, maxHeight, MAX_GAUGE_SIZE.dp)
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(side)) {
-            TunerGauge(reading = state.reading, modifier = Modifier.fillMaxSize())
-            ReadingDisplay(reading = state.reading, isListening = state.isListening, gaugeSize = side)
+            TunerGauge(
+                reading = state.reading,
+                toleranceCents = state.settings.toleranceCents,
+                modifier = Modifier.fillMaxSize()
+            )
+            ReadingDisplay(
+                reading = state.reading,
+                isListening = state.isListening,
+                useFlats = state.settings.useFlats,
+                gaugeSize = side
+            )
             TuneHint(
                 reading = state.reading,
                 modifier = Modifier
