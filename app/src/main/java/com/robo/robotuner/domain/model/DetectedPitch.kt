@@ -19,18 +19,21 @@ data class DetectedPitch(
         get() = cents > IN_TUNE_THRESHOLD
 
     companion object {
-        const val IN_TUNE_THRESHOLD = 5.0
+        const val IN_TUNE_THRESHOLD = 3.0
+        private const val NOTE_HOLD_CENTS = 60.0
 
-        fun fromFrequency(frequency: Double): DetectedPitch {
+        fun fromFrequency(frequency: Double, previous: DetectedPitch? = null): DetectedPitch {
+            if (previous != null) {
+                val cents = Note.calculateCents(frequency, previous.targetFrequency)
+                if (abs(cents) <= NOTE_HOLD_CENTS) return previous.copy(frequency = frequency, cents = cents)
+            }
             val (note, octave) = Note.fromFrequency(frequency)
             val targetFrequency = Note.getFrequency(note, octave)
-            val cents = Note.calculateCents(frequency, targetFrequency)
-
             return DetectedPitch(
                 frequency = frequency,
                 note = note,
                 octave = octave,
-                cents = cents,
+                cents = Note.calculateCents(frequency, targetFrequency),
                 targetFrequency = targetFrequency
             )
         }

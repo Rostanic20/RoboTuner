@@ -1,174 +1,98 @@
 package com.robo.robotuner.data.audio
 
-import org.junit.Assert.*
-import org.junit.Before
+import com.robo.robotuner.data.audio.TestUtils.GUITAR_STRINGS
+import com.robo.robotuner.data.audio.TestUtils.HOP_SIZE
+import com.robo.robotuner.data.audio.TestUtils.SAMPLE_RATE
+import com.robo.robotuner.data.audio.TestUtils.ToneStream
+import com.robo.robotuner.data.audio.TestUtils.centsError
+import com.robo.robotuner.domain.model.Note
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.pow
 
 class PitchPipelineTest {
 
-    private lateinit var pipeline: PitchPipeline
+    private val pipeline = PitchPipeline(SAMPLE_RATE)
+    private val stream = ToneStream()
+    private val guitar = listOf(0.25, 1.0, 0.7, 0.5, 0.35, 0.2, 0.15, 0.1)
 
-    @Before
-    fun setup() {
-        pipeline = PitchPipeline(TestUtils.SAMPLE_RATE)
-    }
+    private fun hops(count: Int, block: () -> FloatArray): List<Double?> =
+        List(count) { pipeline.detectPitch(block()) }
 
-    // Helper to feed multiple frames until we get a confirmed result
-    private fun detectWithConfirmation(frequency: Double, frames: Int = 6): Double? {
-        var result: Double? = null
-        repeat(frames) {
-            val samples = TestUtils.generateSineWave(frequency)
-            result = pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-        }
-        return result
-    }
+    private fun tone(count: Int, frequency: Double, harmonics: List<Double> = listOf(1.0)) =
+        hops(count) { stream.next(HOP_SIZE, frequency, harmonics, noise = 0.003) }
 
-    private fun detectWithConfirmationHarmonics(
-        frequency: Double,
-        harmonics: List<Float>,
-        frames: Int = 6
-    ): Double? {
-        var result: Double? = null
-        repeat(frames) {
-            val samples = TestUtils.generateSineWaveWithHarmonics(frequency, harmonics, durationMs = 200)
-            result = pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-        }
-        return result
-    }
+    private var noiseSeed = 0
+
+    private fun noise(count: Int, amplitude: Float) =
+        hops(count) { TestUtils.generateNoise(HOP_SIZE, amplitude, seed = ++noiseSeed) }
 
     @Test
-    fun `detect A4 440Hz`() {
-        val result = detectWithConfirmation(440.0)
-
-        assertNotNull("Should detect 440Hz", result)
-        val centsError = abs(TestUtils.centsError(result!!, 440.0))
-        assertTrue("Error should be < 20 cents, was $centsError", centsError < 20)
-    }
-
-    @Test
-    fun `detect all guitar strings`() {
-        val guitarStrings = mapOf(
-            "E2" to 82.41,
-            "A2" to 110.0,
-            "D3" to 146.83,
-            "G3" to 196.0,
-            "B3" to 246.94,
-            "E4" to 329.63
-        )
-
-        for ((name, freq) in guitarStrings) {
+    fun `every guitar string with a weak fundamental reads in tune within half a cent`() {
+        for (frequency in GUITAR_STRINGS) {
             pipeline.reset()
-            val result = detectWithConfirmation(freq)
-
-            assertNotNull("Should detect $name ($freq Hz)", result)
-            val centsError = abs(TestUtils.centsError(result!!, freq))
-            assertTrue("$name error should be < 30 cents, was $centsError", centsError < 30)
+            val result = tone(10, frequency, guitar).last()
+            assertNotNull("no pitch for $frequency Hz", result)
+            val error = abs(centsError(result!!, frequency))
+            assertTrue("$frequency Hz off by $error cents", error < 0.5)
         }
     }
 
     @Test
-    fun `handle guitar-like harmonics`() {
-        // Low E with harmonics
-        val harmonics = listOf(1f, 0.7f, 0.5f, 0.3f, 0.2f)
-        val result = detectWithConfirmationHarmonics(82.41, harmonics)
-
-        assertNotNull("Should detect fundamental with harmonics", result)
-        // Should find fundamental ~82Hz, not harmonic at 165Hz
-        assertTrue("Should find low E fundamental, was $result", result!! < 100)
+    fun `first reading appears on the fifth hop`() {
+        val outputs = tone(5, 110.0)
+        assertTrue(outputs.dropLast(1).all { it == null })
+        assertNotNull(outputs.last())
     }
 
     @Test
-    fun `reject silence`() {
-        repeat(10) {
-            val samples = FloatArray(8192) { 0f }
-            pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-        }
-        val samples = FloatArray(8192) { 0f }
-        val result = pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNull("Should reject silence", result)
+    fun `peg turn of 20 cents settles within 6 hops`() {
+        tone(10, 110.0)
+        val sharp = 110.0 * 2.0.pow(20 / 1200.0)
+        val outputs = tone(6, sharp)
+        assertEquals(20.0, centsError(outputs.last()!!, 110.0), 0.5)
     }
 
     @Test
-    fun `reject low noise`() {
-        repeat(10) {
-            val samples = TestUtils.generateNoise(8192, 0.01f)
-            pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-        }
-        val samples = TestUtils.generateNoise(8192, 0.01f)
-        val result = pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNull("Should reject noise", result)
+    fun `changing string never shows a note in between`() {
+        tone(10, 82.41)
+        val outputs = tone(10, 110.0).filterNotNull()
+        val notes = outputs.map { Note.fromFrequency(it).first }.toSet()
+        assertEquals(setOf(Note.E, Note.A), notes)
+        assertEquals(0.0, centsError(outputs.last(), 110.0), 0.5)
     }
 
     @Test
-    fun `smooth consecutive measurements`() {
-        val results = mutableListOf<Double>()
-
-        // Feed multiple frames of same frequency
-        repeat(10) {
-            val samples = TestUtils.generateSineWave(440.0)
-            val result = pipeline.detectPitch(samples, TestUtils.SAMPLE_RATE)
-            if (result != null) results.add(result)
-        }
-
-        assertTrue("Should have multiple results", results.size >= 3)
-
-        // Check stability - variance should be low
-        val mean = results.average()
-        val variance = results.map { (it - mean) * (it - mean) }.average()
-
-        assertTrue("Results should be stable, variance was $variance", variance < 5.0)
+    fun `string near a semitone boundary still shows a reading`() {
+        val outputs = tone(8, 110.0 * 2.0.pow(48 / 1200.0))
+        assertNotNull(outputs.last())
     }
 
     @Test
-    fun `hysteresis prevents note flickering`() {
-        // Feed A4 multiple times to establish baseline
-        repeat(8) {
-            pipeline.detectPitch(
-                TestUtils.generateSineWave(440.0),
-                TestUtils.SAMPLE_RATE
-            )
-        }
-
-        // Feed one frame of slightly different pitch (still A4)
-        val result = pipeline.detectPitch(
-            TestUtils.generateSineWave(442.0),
-            TestUtils.SAMPLE_RATE
-        )
-
-        assertNotNull(result)
-        // Should still be close to A4 range
-        val centsError = abs(TestUtils.centsError(result!!, 440.0))
-        assertTrue("Should maintain stable note, cents error was $centsError", centsError < 20)
+    fun `room noise after a note clears the reading within about a second`() {
+        tone(10, 110.0)
+        val outputs = noise(30, 0.003f)
+        assertNotNull("holds briefly", outputs.first())
+        assertNull("clears after hold", outputs.last())
     }
 
     @Test
-    fun `chromatic scale detection`() {
-        // Test all 12 notes in octave 4
-        val chromaticScale = listOf(
-            261.63, // C4
-            277.18, // C#4
-            293.66, // D4
-            311.13, // D#4
-            329.63, // E4
-            349.23, // F4
-            369.99, // F#4
-            392.00, // G4
-            415.30, // G#4
-            440.00, // A4
-            466.16, // A#4
-            493.88  // B4
-        )
+    fun `quiet unprocessed-level signal is still read`() {
+        val outputs = hops(8) { stream.next(HOP_SIZE, 110.0, guitar, noise = 0.00005, gain = 0.0004) }
+        assertEquals(0.0, centsError(outputs.last()!!, 110.0), 0.5)
+    }
 
-        for (freq in chromaticScale) {
-            pipeline.reset()
-            val result = detectWithConfirmation(freq)
+    @Test
+    fun `digital silence never produces a reading`() {
+        assertTrue(hops(20) { FloatArray(HOP_SIZE) }.all { it == null })
+    }
 
-            assertNotNull("Should detect $freq Hz", result)
-            val centsError = abs(TestUtils.centsError(result!!, freq))
-            assertTrue("Error for $freq Hz should be < 30 cents, was $centsError", centsError < 30)
-        }
+    @Test
+    fun `room noise alone never produces a reading`() {
+        assertTrue(noise(40, 0.003f).all { it == null })
     }
 }

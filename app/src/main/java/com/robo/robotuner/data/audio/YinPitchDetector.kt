@@ -1,134 +1,63 @@
 package com.robo.robotuner.data.audio
 
-import kotlin.math.abs
-import kotlin.math.sqrt
+import kotlin.math.ceil
 
 class YinPitchDetector {
 
-    data class Result(val frequency: Double, val confidence: Float)
+    fun detectPitch(samples: FloatArray, sampleRate: Int): Double? {
+        val minTau = (sampleRate / MAX_FREQUENCY).toInt().coerceAtLeast(2)
+        val maxTau = ceil(sampleRate / MIN_FREQUENCY).toInt()
+        val window = samples.size - maxTau - 1
+        if (window < MIN_WINDOW) return null
 
-    fun detectPitch(
-        audioSamples: FloatArray,
-        sampleRate: Int,
-        minFreq: Double = MIN_FREQUENCY,
-        maxFreq: Double = MAX_FREQUENCY
-    ): Result? {
-        if (audioSamples.isEmpty()) return null
-
-        val bufferSize = audioSamples.size
-        val yinBufferSize = bufferSize / 2
-
-        if (yinBufferSize < MIN_BUFFER_SIZE) return null
-
-        // Convert frequency range to tau range
-        // tau = sampleRate / frequency, so higher freq = lower tau
-        val minTau = (sampleRate / maxFreq).toInt().coerceAtLeast(2)
-        val maxTau = (sampleRate / minFreq).toInt().coerceAtMost(yinBufferSize - 1)
-
-        if (minTau >= maxTau) return null
-
-        val yinBuffer = FloatArray(yinBufferSize)
-
-        computeDifferenceFunction(audioSamples, yinBuffer, yinBufferSize)
-        cumulativeMeanNormalizedDifference(yinBuffer, yinBufferSize)
-
-        val tauEstimate = absoluteThreshold(yinBuffer, minTau, maxTau)
-        if (tauEstimate == -1) return null
-
-        val betterTau = parabolicInterpolation(yinBuffer, tauEstimate, yinBufferSize)
-        val frequency = sampleRate.toDouble() / betterTau
-
-        if (frequency < minFreq || frequency > maxFreq) return null
-
-        val confidence = 1f - yinBuffer[tauEstimate].coerceIn(0f, 1f)
-        return Result(frequency, confidence)
-    }
-
-    private fun computeDifferenceFunction(
-        audioSamples: FloatArray,
-        yinBuffer: FloatArray,
-        yinBufferSize: Int
-    ) {
-        for (tau in 0 until yinBufferSize) {
-            var sum = 0f
-            for (i in 0 until yinBufferSize) {
-                val delta = audioSamples[i] - audioSamples[i + tau]
+        val difference = DoubleArray(maxTau + 2)
+        for (tau in 1..maxTau + 1) {
+            var sum = 0.0
+            for (i in 0 until window) {
+                val delta = samples[i] - samples[i + tau]
                 sum += delta * delta
             }
-            yinBuffer[tau] = sum
+            difference[tau] = sum
         }
+
+        val normalized = DoubleArray(maxTau + 2)
+        normalized[0] = 1.0
+        var runningSum = 0.0
+        for (tau in 1..maxTau + 1) {
+            runningSum += difference[tau]
+            normalized[tau] = if (runningSum > 0.0) difference[tau] * tau / runningSum else 1.0
+        }
+
+        val tau = firstDipBelowThreshold(normalized, minTau, maxTau) ?: return null
+        return sampleRate / parabolicMinimum(difference, tau)
     }
 
-    private fun cumulativeMeanNormalizedDifference(yinBuffer: FloatArray, yinBufferSize: Int) {
-        yinBuffer[0] = 1f
-        var runningSum = 0f
-
-        for (tau in 1 until yinBufferSize) {
-            runningSum += yinBuffer[tau]
-            // Use epsilon comparison instead of exact equality
-            if (runningSum > 1e-10f) {
-                yinBuffer[tau] = yinBuffer[tau] * tau / runningSum
-            }
-        }
-    }
-
-    private fun absoluteThreshold(yinBuffer: FloatArray, minTau: Int, maxTau: Int): Int {
+    private fun firstDipBelowThreshold(normalized: DoubleArray, minTau: Int, maxTau: Int): Int? {
         var tau = minTau
         while (tau <= maxTau) {
-            if (yinBuffer[tau] < THRESHOLD) {
-                while (tau + 1 <= maxTau && yinBuffer[tau + 1] < yinBuffer[tau]) {
-                    tau++
-                }
-                if (yinBuffer[tau] < THRESHOLD) {
-                    return tau
-                }
+            if (normalized[tau] < THRESHOLD) {
+                while (tau < maxTau && normalized[tau + 1] < normalized[tau]) tau++
+                return tau
             }
             tau++
         }
-
-        // Fallback: find global minimum in range
-        var minTauIdx = minTau
-        var minVal = yinBuffer[minTau]
-        for (t in minTau + 1..maxTau) {
-            if (yinBuffer[t] < minVal) {
-                minVal = yinBuffer[t]
-                minTauIdx = t
-            }
-        }
-
-        return if (minVal < THRESHOLD_FALLBACK) minTauIdx else -1
+        return null
     }
 
-    private fun parabolicInterpolation(yinBuffer: FloatArray, tau: Int, yinBufferSize: Int): Double {
-        if (tau <= 0 || tau >= yinBufferSize - 1) {
-            return tau.toDouble()
-        }
-
-        val s0 = yinBuffer[tau - 1]
-        val s1 = yinBuffer[tau]
-        val s2 = yinBuffer[tau + 1]
-
-        val denominator = 2 * (2 * s1 - s2 - s0)
-        if (abs(denominator) < 1e-9f) {
-            return tau.toDouble()
-        }
-
-        val adjustment = (s2 - s0) / denominator
-
-        return if (abs(adjustment) < 1) {
-            tau.toDouble() + adjustment.toDouble()
-        } else {
-            tau.toDouble()
-        }
+    private fun parabolicMinimum(values: DoubleArray, tau: Int): Double {
+        val s0 = values[tau - 1]
+        val s1 = values[tau]
+        val s2 = values[tau + 1]
+        val denominator = s0 - 2 * s1 + s2
+        if (denominator <= 0.0) return tau.toDouble()
+        val shift = 0.5 * (s0 - s2) / denominator
+        return if (shift > -1 && shift < 1) tau + shift else tau.toDouble()
     }
 
     companion object {
-        private const val THRESHOLD = 0.10f
-        private const val THRESHOLD_FALLBACK = 0.25f
-        // Increased from 1024 - need more samples for 82Hz detection
-        // 2048 samples at 44100Hz = ~46ms = ~4 cycles of 82Hz
-        private const val MIN_BUFFER_SIZE = 2048
-        private const val MIN_FREQUENCY = 65.0   // Lowered for low E string with margin
+        private const val MIN_FREQUENCY = 60.0
         private const val MAX_FREQUENCY = 1400.0
+        private const val THRESHOLD = 0.15
+        private const val MIN_WINDOW = 2048
     }
 }

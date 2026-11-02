@@ -1,63 +1,50 @@
 package com.robo.robotuner.data.audio
 
 import kotlin.math.PI
+import kotlin.math.log2
 import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 object TestUtils {
 
     const val SAMPLE_RATE = 44100
+    const val HOP_SIZE = 2048
+
+    val GUITAR_STRINGS = listOf(82.41, 110.0, 146.83, 196.0, 246.94, 329.63)
 
     fun generateSineWave(
         frequency: Double,
-        durationMs: Int = 200,
-        sampleRate: Int = SAMPLE_RATE,
+        numSamples: Int = 8192,
         amplitude: Float = 0.8f
-    ): FloatArray {
-        val numSamples = (sampleRate * durationMs / 1000.0).toInt()
-        val samples = FloatArray(numSamples)
+    ): FloatArray = ToneStream().next(numSamples, frequency, listOf(amplitude.toDouble()), gain = 1.0)
 
-        for (i in 0 until numSamples) {
-            val t = i.toDouble() / sampleRate
-            samples[i] = (amplitude * sin(2 * PI * frequency * t)).toFloat()
-        }
-
-        return samples
+    fun generateNoise(numSamples: Int, amplitude: Float, seed: Int = 1): FloatArray {
+        val random = Random(seed)
+        return FloatArray(numSamples) { ((random.nextDouble() * 2 - 1) * amplitude).toFloat() }
     }
 
-    fun generateSineWaveWithHarmonics(
-        fundamental: Double,
-        harmonicAmplitudes: List<Float> = listOf(1f, 0.5f, 0.3f, 0.2f),
-        durationMs: Int = 200,
-        sampleRate: Int = SAMPLE_RATE
-    ): FloatArray {
-        val numSamples = (sampleRate * durationMs / 1000.0).toInt()
-        val samples = FloatArray(numSamples)
+    fun centsError(detected: Double, expected: Double): Double = 1200 * log2(detected / expected)
 
-        for (i in 0 until numSamples) {
-            val t = i.toDouble() / sampleRate
-            var sample = 0f
-            for ((index, amp) in harmonicAmplitudes.withIndex()) {
-                val harmonic = (index + 1) * fundamental
-                sample += (amp * sin(2 * PI * harmonic * t)).toFloat()
+    class ToneStream(seed: Int = 1) {
+        private val random = Random(seed)
+        private val phases = DoubleArray(16) { random.nextDouble() * 2 * PI }
+
+        fun next(
+            numSamples: Int,
+            frequency: Double,
+            harmonics: List<Double> = listOf(1.0),
+            inharmonicity: Double = 0.0,
+            noise: Double = 0.0,
+            gain: Double = 0.3
+        ): FloatArray = FloatArray(numSamples) {
+            var sample = 0.0
+            for ((index, amplitude) in harmonics.withIndex()) {
+                val h = index + 1
+                phases[index] += 2 * PI * h * frequency * sqrt(1 + inharmonicity * h * h) / SAMPLE_RATE
+                sample += amplitude * sin(phases[index])
             }
-            samples[i] = sample * 0.5f
+            (gain * sample + noise * (random.nextDouble() * 2 - 1)).toFloat()
         }
-
-        return samples
-    }
-
-    fun generateNoise(
-        numSamples: Int,
-        amplitude: Float = 0.1f
-    ): FloatArray {
-        val samples = FloatArray(numSamples)
-        for (i in 0 until numSamples) {
-            samples[i] = ((Math.random() * 2 - 1) * amplitude).toFloat()
-        }
-        return samples
-    }
-
-    fun centsError(detected: Double, expected: Double): Double {
-        return 1200 * kotlin.math.log2(detected / expected)
     }
 }

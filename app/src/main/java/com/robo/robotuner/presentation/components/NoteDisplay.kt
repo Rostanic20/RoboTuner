@@ -19,6 +19,7 @@ import com.robo.robotuner.ui.theme.AccentRed
 import com.robo.robotuner.ui.theme.TextMuted
 import com.robo.robotuner.ui.theme.TextPrimary
 import com.robo.robotuner.ui.theme.TextSecondary
+import java.util.Locale
 
 @Composable
 fun NoteDisplay(
@@ -60,7 +61,7 @@ fun NoteDisplay(
         }
 
         Text(
-            text = if (pitch != null) String.format("%.1f Hz", pitch.frequency) else "- Hz",
+            text = if (pitch != null) String.format(Locale.getDefault(), "%.1f Hz", pitch.frequency) else "- Hz",
             fontSize = 16.sp,
             color = TextMuted
         )

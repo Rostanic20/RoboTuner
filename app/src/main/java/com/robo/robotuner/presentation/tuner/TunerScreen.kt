@@ -14,24 +14,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,8 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.presentation.components.GuitarStringIndicator
 import com.robo.robotuner.presentation.components.NoteDisplay
@@ -57,14 +52,16 @@ import com.robo.robotuner.ui.theme.DarkBackground
 import com.robo.robotuner.ui.theme.DarkCard
 import com.robo.robotuner.ui.theme.TextMuted
 import com.robo.robotuner.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @Composable
 fun TunerScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val viewModel: TunerViewModel = viewModel(factory = TunerViewModelFactory(context))
 
-    val tunerState by viewModel.tunerState.collectAsState()
-    val isListening by viewModel.isListening.collectAsState()
+    val tunerState by viewModel.tunerState.collectAsStateWithLifecycle()
+    val isListening by viewModel.isListening.collectAsStateWithLifecycle()
 
     var showPermissionRationale by remember { mutableStateOf(false) }
 
@@ -78,23 +75,18 @@ fun TunerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose { viewModel.stopListening() }
+    LifecycleStartEffect(viewModel) {
+        viewModel.onScreenVisible()
+        onStopOrDispose { viewModel.onScreenHidden() }
     }
 
     val currentPitch = (tunerState as? TunerState.Detected)?.pitch
     val isInTune = currentPitch?.isInTune == true
 
-    // Vibration feedback when in tune
-    var lastVibrationTime by remember { mutableStateOf(0L) }
     LaunchedEffect(isInTune) {
         if (isInTune) {
-            val now = System.currentTimeMillis()
-            // Only vibrate once every 500ms to avoid constant buzzing
-            if (now - lastVibrationTime > 500) {
-                lastVibrationTime = now
-                vibrateInTune(context)
-            }
+            delay(IN_TUNE_VIBRATION_DELAY_MS)
+            vibrateInTune(context)
         }
     }
 
@@ -141,8 +133,8 @@ fun TunerScreen(modifier: Modifier = Modifier) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     val centsText = currentPitch?.let {
-                        val sign = if (it.cents >= 0) "+" else ""
-                        "$sign${it.cents.toInt()}"
+                        val rounded = it.cents.roundToInt()
+                        if (rounded > 0) "+$rounded" else "$rounded"
                     } ?: "-"
 
                     val centsColor by animateColorAsState(
@@ -164,25 +156,16 @@ fun TunerScreen(modifier: Modifier = Modifier) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Frequency display
-            val frequencyText = currentPitch?.let {
-                String.format("%.1f Hz", it.frequency)
-            } ?: "-- Hz"
-
-            Text(
-                text = frequencyText,
-                fontSize = 16.sp,
-                color = TextMuted,
-                fontWeight = FontWeight.Medium
-            )
-
             Spacer(modifier = Modifier.weight(0.5f))
 
-            if (showPermissionRationale) {
+            val errorText = when {
+                showPermissionRationale -> "Microphone access needed"
+                tunerState is TunerState.Error -> (tunerState as TunerState.Error).message
+                else -> null
+            }
+            if (errorText != null) {
                 Text(
-                    text = "Microphone access needed",
+                    text = errorText,
                     color = AccentRed,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
@@ -236,6 +219,8 @@ fun TunerScreen(modifier: Modifier = Modifier) {
     }
 }
 
+private const val IN_TUNE_VIBRATION_DELAY_MS = 400L
+
 @Suppress("DEPRECATION")
 private fun vibrateInTune(context: Context) {
     val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -246,7 +231,6 @@ private fun vibrateInTune(context: Context) {
     }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        // Short double vibration pattern for "in tune" feedback
         vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
     } else {
         vibrator.vibrate(50)

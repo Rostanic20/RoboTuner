@@ -5,91 +5,68 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.isActive
-import kotlin.coroutines.coroutineContext
 
 class AudioRecorder(private val context: Context) {
 
-    private var audioRecord: AudioRecord? = null
-    @Volatile
-    private var isRecording = false
-
     val sampleRate: Int = SAMPLE_RATE
 
-    fun hasPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    private fun hasPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
     fun startRecording(): Flow<FloatArray> = flow {
-        if (!hasPermission()) {
-            throw SecurityException("Audio recording permission not granted")
-        }
+        if (!hasPermission()) throw SecurityException("Audio recording permission not granted")
 
-        val bufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT
-        ).coerceAtLeast(BUFFER_SIZE)
+        val minBufferBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        check(minBufferBytes > 0) { "Audio format not supported: $minBufferBytes" }
 
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+        val record = AudioRecord(
+            audioSource(),
             SAMPLE_RATE,
             CHANNEL_CONFIG,
             AUDIO_FORMAT,
-            bufferSize
+            maxOf(minBufferBytes, HOP_SIZE * BYTES_PER_SAMPLE * BUFFERED_HOPS)
         )
-
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            throw IllegalStateException("AudioRecord initialization failed")
-        }
-
-        val buffer = ShortArray(BUFFER_SIZE)
-        isRecording = true
-        audioRecord?.startRecording()
-
         try {
-            while (isRecording && coroutineContext.isActive) {
-                val readCount = audioRecord?.read(buffer, 0, BUFFER_SIZE) ?: 0
-                if (readCount > 0) {
-                    val floatBuffer = FloatArray(readCount)
-                    for (i in 0 until readCount) {
-                        floatBuffer[i] = buffer[i] / Short.MAX_VALUE.toFloat()
-                    }
-                    emit(floatBuffer)
-                }
+            check(record.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord initialization failed" }
+            record.startRecording()
+            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone is in use by another app" }
+            val buffer = ShortArray(HOP_SIZE)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val read = record.read(buffer, 0, HOP_SIZE)
+                check(read >= 0) { "AudioRecord read failed: $read" }
+                if (read > 0) emit(FloatArray(read) { buffer[it] / 32768f })
             }
         } finally {
-            stopRecordingInternal()
+            if (record.state == AudioRecord.STATE_INITIALIZED) record.stop()
+            record.release()
         }
     }.flowOn(Dispatchers.IO)
 
-    fun stopRecording() {
-        isRecording = false
+    private fun audioSource(): Int {
+        val audioManager = context.getSystemService(AudioManager::class.java)
+        val unprocessed = audioManager?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
+        // VOICE_RECOGNITION faded a steady tone to the noise floor within 2 s on a Galaxy S23+; MIC did not.
+        return if (unprocessed) MediaRecorder.AudioSource.UNPROCESSED else MediaRecorder.AudioSource.MIC
     }
-
-    private fun stopRecordingInternal() {
-        isRecording = false
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-    }
-
-    fun isRecording(): Boolean = isRecording
 
     companion object {
         const val SAMPLE_RATE = 44100
-        const val BUFFER_SIZE = 8192  // Increased for better low frequency detection
+        private const val HOP_SIZE = 2048
+        private const val BYTES_PER_SAMPLE = 2
+        private const val BUFFERED_HOPS = 4
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }

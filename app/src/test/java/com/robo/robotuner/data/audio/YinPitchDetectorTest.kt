@@ -1,99 +1,61 @@
 package com.robo.robotuner.data.audio
 
-import org.junit.Assert.*
-import org.junit.Before
+import com.robo.robotuner.data.audio.TestUtils.SAMPLE_RATE
+import com.robo.robotuner.data.audio.TestUtils.ToneStream
+import com.robo.robotuner.data.audio.TestUtils.centsError
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.pow
 
 class YinPitchDetectorTest {
 
-    private lateinit var detector: YinPitchDetector
+    private val detector = YinPitchDetector()
+    private val frameSize = PitchPipeline.WINDOW_SIZE
 
-    @Before
-    fun setup() {
-        detector = YinPitchDetector()
+    private fun detect(samples: FloatArray) = detector.detectPitch(samples, SAMPLE_RATE)
+
+    @Test
+    fun `pure tones across the guitar range are within a twentieth of a cent`() {
+        for (step in 0..36) {
+            for (offset in listOf(-37.0, -13.0, 0.0, 23.0, 41.0)) {
+                val frequency = 82.41 * 2.0.pow(step / 12.0) * 2.0.pow(offset / 1200)
+                val result = detect(ToneStream(step).next(frameSize, frequency))
+                assertNotNull("no pitch for $frequency Hz", result)
+                val error = abs(centsError(result!!, frequency))
+                assertTrue("$frequency Hz off by $error cents", error < 0.05)
+            }
+        }
     }
 
     @Test
-    fun `detect A4 440Hz pure sine`() {
-        val samples = TestUtils.generateSineWave(440.0)
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNotNull("Should detect pitch", result)
-        val centsError = abs(TestUtils.centsError(result!!.frequency, 440.0))
-        assertTrue("Error should be < 10 cents, was $centsError", centsError < 10)
+    fun `fundamental weaker than its second harmonic is not reported an octave up`() {
+        val weakFundamental = listOf(0.25, 1.0, 0.7, 0.5, 0.35, 0.2, 0.15, 0.1)
+        for (step in 0..36) {
+            val frequency = 82.41 * 2.0.pow(step / 12.0)
+            val result = detect(ToneStream(step).next(frameSize, frequency, weakFundamental, noise = 0.003))
+            assertNotNull("no pitch for $frequency Hz", result)
+            val error = abs(centsError(result!!, frequency))
+            assertTrue("$frequency Hz off by $error cents", error < 0.5)
+        }
     }
 
     @Test
-    fun `detect low E 82Hz`() {
-        val samples = TestUtils.generateSineWave(82.41)
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNotNull("Should detect pitch", result)
-        val centsError = abs(TestUtils.centsError(result!!.frequency, 82.41))
-        assertTrue("Error should be < 15 cents, was $centsError", centsError < 15)
+    fun `silence has no pitch`() {
+        assertNull(detect(FloatArray(frameSize)))
     }
 
     @Test
-    fun `detect high E 329Hz`() {
-        val samples = TestUtils.generateSineWave(329.63)
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNotNull("Should detect pitch", result)
-        val centsError = abs(TestUtils.centsError(result!!.frequency, 329.63))
-        assertTrue("Error should be < 10 cents, was $centsError", centsError < 10)
+    fun `noise has no pitch`() {
+        for (seed in 1..20) {
+            assertNull("seed $seed", detect(TestUtils.generateNoise(frameSize, 0.3f, seed)))
+        }
     }
 
     @Test
-    fun `detect with harmonics`() {
-        val samples = TestUtils.generateSineWaveWithHarmonics(110.0)
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNotNull("Should detect pitch", result)
-        val centsError = abs(TestUtils.centsError(result!!.frequency, 110.0))
-        assertTrue("Error should be < 20 cents, was $centsError", centsError < 20)
-    }
-
-    @Test
-    fun `reject silence`() {
-        val samples = FloatArray(8192) { 0f }
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNull("Should reject silence", result)
-    }
-
-    @Test
-    fun `reject noise`() {
-        val samples = TestUtils.generateNoise(8192, 0.005f)
-        val result = detector.detectPitch(samples, TestUtils.SAMPLE_RATE)
-
-        assertNull("Should reject low-level noise", result)
-    }
-
-    @Test
-    fun `confidence higher for clean signal`() {
-        val cleanSamples = TestUtils.generateSineWave(440.0, amplitude = 0.9f)
-        val noisySamples = TestUtils.generateSineWave(440.0, amplitude = 0.3f)
-
-        val cleanResult = detector.detectPitch(cleanSamples, TestUtils.SAMPLE_RATE)
-        val noisyResult = detector.detectPitch(noisySamples, TestUtils.SAMPLE_RATE)
-
-        assertNotNull(cleanResult)
-        assertNotNull(noisyResult)
-        assertTrue(
-            "Clean signal should have higher confidence",
-            cleanResult!!.confidence >= noisyResult!!.confidence
-        )
-    }
-
-    @Test
-    fun `detect within custom frequency range`() {
-        val samples = TestUtils.generateSineWave(200.0)
-
-        val resultInRange = detector.detectPitch(samples, TestUtils.SAMPLE_RATE, 150.0, 250.0)
-        val resultOutOfRange = detector.detectPitch(samples, TestUtils.SAMPLE_RATE, 300.0, 400.0)
-
-        assertNotNull("Should detect when in range", resultInRange)
-        assertNull("Should not detect when out of range", resultOutOfRange)
+    fun `frame too short for the lowest note has no pitch`() {
+        assertNull(detect(ToneStream().next(2048, 110.0)))
     }
 }

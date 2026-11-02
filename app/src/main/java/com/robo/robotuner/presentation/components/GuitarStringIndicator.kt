@@ -34,17 +34,18 @@ import kotlin.math.abs
 data class GuitarString(
     val name: String,
     val note: Note,
-    val octave: Int,
-    val frequency: Double
-)
+    val octave: Int
+) {
+    val frequency: Double = Note.getFrequency(note, octave)
+}
 
 val standardGuitarStrings = listOf(
-    GuitarString("E", Note.E, 2, 82.41),   // 6th string (thickest, low E)
-    GuitarString("A", Note.A, 2, 110.00),  // 5th string
-    GuitarString("D", Note.D, 3, 146.83),  // 4th string
-    GuitarString("G", Note.G, 3, 196.00),  // 3rd string
-    GuitarString("B", Note.B, 3, 246.94),  // 2nd string
-    GuitarString("E", Note.E, 4, 329.63)   // 1st string (thinnest, high E)
+    GuitarString("E", Note.E, 2),
+    GuitarString("A", Note.A, 2),
+    GuitarString("D", Note.D, 3),
+    GuitarString("G", Note.G, 3),
+    GuitarString("B", Note.B, 3),
+    GuitarString("E", Note.E, 4)
 )
 
 @Composable

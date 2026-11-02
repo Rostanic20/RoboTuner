@@ -4,6 +4,4 @@ import kotlinx.coroutines.flow.Flow
 
 interface AudioRepository {
     fun startListening(): Flow<FloatArray>
-    fun stopListening()
-    fun isListening(): Boolean
 }
