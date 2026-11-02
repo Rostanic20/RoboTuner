@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.domain.usecase.DetectPitchUseCase
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,43 +23,48 @@ class TunerViewModel(
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
     private var listeningJob: Job? = null
+    private var wantsListening = false
 
     fun startListening() {
-        if (_isListening.value) return
-
-        _isListening.value = true
-        _tunerState.value = TunerState.Listening
-
-        listeningJob = viewModelScope.launch {
-            detectPitchUseCase.execute()
-                .catch { e ->
-                    _tunerState.value = TunerState.Error(e.message ?: "Unknown error")
-                    _isListening.value = false
-                }
-                .collect { state ->
-                    _tunerState.value = state
-                }
-        }
+        wantsListening = true
+        listen()
     }
 
     fun stopListening() {
-        listeningJob?.cancel()
-        listeningJob = null
-        detectPitchUseCase.stop()
-        _isListening.value = false
-        _tunerState.value = TunerState.Idle
+        wantsListening = false
+        halt()
     }
 
-    fun toggleListening() {
-        if (_isListening.value) {
-            stopListening()
-        } else {
-            startListening()
+    fun onScreenVisible() {
+        if (wantsListening) listen()
+    }
+
+    fun onScreenHidden() {
+        halt()
+    }
+
+    private fun listen() {
+        if (listeningJob?.isActive == true) return
+        val previousJob = listeningJob
+        _isListening.value = true
+        _tunerState.value = TunerState.Listening
+        listeningJob = viewModelScope.launch {
+            previousJob?.cancelAndJoin()
+            detectPitchUseCase.execute()
+                .catch { e ->
+                    wantsListening = false
+                    _isListening.value = false
+                    _tunerState.value = TunerState.Error(e.message ?: "Unknown error")
+                }
+                .collect { _tunerState.value = it }
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        stopListening()
+    private fun halt() {
+        val job = listeningJob ?: return
+        if (!job.isActive) return
+        job.cancel()
+        _isListening.value = false
+        _tunerState.value = TunerState.Idle
     }
 }

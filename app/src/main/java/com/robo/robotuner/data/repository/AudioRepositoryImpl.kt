@@ -8,15 +8,5 @@ class AudioRepositoryImpl(
     private val audioRecorder: AudioRecorder
 ) : AudioRepository {
 
-    override fun startListening(): Flow<FloatArray> {
-        return audioRecorder.startRecording()
-    }
-
-    override fun stopListening() {
-        audioRecorder.stopRecording()
-    }
-
-    override fun isListening(): Boolean {
-        return audioRecorder.isRecording()
-    }
+    override fun startListening(): Flow<FloatArray> = audioRecorder.startRecording()
 }

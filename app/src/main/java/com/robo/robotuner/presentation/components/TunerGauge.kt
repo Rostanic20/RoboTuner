@@ -1,5 +1,6 @@
 package com.robo.robotuner.presentation.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.ui.theme.AccentGreen
 import com.robo.robotuner.ui.theme.AccentOrange
 import com.robo.robotuner.ui.theme.AccentRed
@@ -21,6 +23,9 @@ import com.robo.robotuner.ui.theme.DarkCard
 import com.robo.robotuner.ui.theme.TextMuted
 import kotlin.math.cos
 import kotlin.math.sin
+
+private const val GAUGE_RANGE_CENTS = 50.0
+private const val GAUGE_HALF_SWEEP = 135.0
 
 @Composable
 fun TunerGauge(
@@ -30,17 +35,16 @@ fun TunerGauge(
     modifier: Modifier = Modifier
 ) {
     val animatedCents by animateFloatAsState(
-        targetValue = cents.toFloat().coerceIn(-50f, 50f),
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 150f),
+        targetValue = cents.coerceIn(-GAUGE_RANGE_CENTS, GAUGE_RANGE_CENTS).toFloat(),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "cents"
     )
 
     val indicatorColor = when {
         !isActive -> TextMuted
         isInTune -> AccentGreen
-        animatedCents < -5 -> AccentRed
-        animatedCents > 5 -> AccentOrange
-        else -> AccentGreen
+        cents < 0 -> AccentRed
+        else -> AccentOrange
     }
 
     Canvas(modifier = modifier.size(280.dp)) {
@@ -76,10 +80,11 @@ private fun DrawScope.drawArcBackground(topLeft: Offset, arcSize: Size, strokeWi
         style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
     )
 
+    val inTuneSweep = (DetectedPitch.IN_TUNE_THRESHOLD / GAUGE_RANGE_CENTS * GAUGE_HALF_SWEEP * 2).toFloat()
     drawArc(
         color = AccentGreen.copy(alpha = 0.15f),
-        startAngle = 261f,
-        sweepAngle = 18f,
+        startAngle = 270f - inTuneSweep / 2,
+        sweepAngle = inTuneSweep,
         useCenter = false,
         topLeft = topLeft,
         size = arcSize,
@@ -132,8 +137,7 @@ private fun DrawScope.drawIndicator(
     color: Color,
     isInTune: Boolean
 ) {
-    val normalizedCents = cents / 50f
-    val angle = Math.toRadians(270.0 + normalizedCents * 135.0)
+    val angle = Math.toRadians(270.0 + cents / GAUGE_RANGE_CENTS * GAUGE_HALF_SWEEP)
 
     val indicatorLength = radius - 30.dp.toPx()
     val endX = centerX + indicatorLength * cos(angle).toFloat()

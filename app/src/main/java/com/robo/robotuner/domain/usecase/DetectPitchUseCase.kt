@@ -4,33 +4,24 @@ import com.robo.robotuner.domain.model.DetectedPitch
 import com.robo.robotuner.domain.model.TunerState
 import com.robo.robotuner.domain.repository.AudioRepository
 import com.robo.robotuner.domain.repository.PitchDetectorRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 
 class DetectPitchUseCase(
     private val audioRepository: AudioRepository,
-    private val pitchDetectorRepository: PitchDetectorRepository,
-    private val sampleRate: Int = DEFAULT_SAMPLE_RATE
+    private val pitchDetectorRepository: PitchDetectorRepository
 ) {
-    fun execute(): Flow<TunerState> {
-        return audioRepository.startListening()
-            .map { audioSamples ->
-                val frequency = pitchDetectorRepository.detectPitch(audioSamples, sampleRate)
-                if (frequency != null && frequency > MIN_FREQUENCY && frequency < MAX_FREQUENCY) {
-                    TunerState.Detected(DetectedPitch.fromFrequency(frequency))
-                } else {
-                    TunerState.Listening
-                }
-            }
-    }
-
-    fun stop() {
-        audioRepository.stopListening()
-    }
-
-    companion object {
-        const val DEFAULT_SAMPLE_RATE = 44100
-        const val MIN_FREQUENCY = 20.0
-        const val MAX_FREQUENCY = 5000.0
-    }
+    fun execute(): Flow<TunerState> = flow {
+        pitchDetectorRepository.reset()
+        var previous: DetectedPitch? = null
+        audioRepository.startListening().collect { samples ->
+            val pitch = pitchDetectorRepository.detectPitch(samples)
+                ?.let { DetectedPitch.fromFrequency(it, previous) }
+            previous = pitch
+            emit(if (pitch != null) TunerState.Detected(pitch) else TunerState.Listening)
+        }
+    }.flowOn(Dispatchers.Default).conflate()
 }

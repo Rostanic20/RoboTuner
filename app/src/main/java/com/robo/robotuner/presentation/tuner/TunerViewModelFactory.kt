@@ -15,13 +15,10 @@ class TunerViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TunerViewModel::class.java)) {
-            val audioRecorder = AudioRecorder(context)
-            val audioRepository = AudioRepositoryImpl(audioRecorder)
-            val pitchDetector = PitchPipeline(audioRecorder.sampleRate)
+            val audioRecorder = AudioRecorder(context.applicationContext)
             val detectPitchUseCase = DetectPitchUseCase(
-                audioRepository = audioRepository,
-                pitchDetectorRepository = pitchDetector,
-                sampleRate = audioRecorder.sampleRate
+                audioRepository = AudioRepositoryImpl(audioRecorder),
+                pitchDetectorRepository = PitchPipeline(audioRecorder.sampleRate)
             )
             return TunerViewModel(detectPitchUseCase) as T
         }
