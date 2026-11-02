@@ -2,6 +2,7 @@ package com.robo.robotuner.presentation.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -27,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,10 +49,10 @@ import com.robo.robotuner.ui.theme.DarkSurface
 import com.robo.robotuner.ui.theme.TextMuted
 import com.robo.robotuner.ui.theme.TextPrimary
 import com.robo.robotuner.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class SettingsActions(
-    val onTuning: (Tuning) -> Unit,
     val onReferenceA4: (Double) -> Unit,
     val onTolerance: (Double) -> Unit,
     val onVibration: (Boolean) -> Unit,
@@ -58,14 +61,126 @@ class SettingsActions(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun TuningSheet(
+    selected: Tuning,
+    useFlats: Boolean,
+    onSelect: (Tuning) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    SheetScaffold(sheetState, onDismiss) {
+        SectionTitle(R.string.tuning)
+        Column(Modifier.selectableGroup()) {
+            Tuning.entries.forEach { tuning ->
+                TuningRow(tuning, selected = tuning == selected, useFlats = useFlats) {
+                    onSelect(tuning)
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) onDismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun SettingsSheet(
     settings: TunerSettings,
     actions: SettingsActions,
     onDismiss: () -> Unit
 ) {
+    SheetScaffold(rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismiss) {
+        SectionTitle(R.string.reference_pitch)
+        val referenceText = stringResource(R.string.reference_value, settings.referenceA4.roundToInt())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = referenceText,
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            if (settings.referenceA4 != Note.DEFAULT_A4) {
+                TextButton(onClick = { actions.onReferenceA4(Note.DEFAULT_A4) }) {
+                    Text(stringResource(R.string.reset_to_440), color = AccentGreen)
+                }
+            }
+        }
+        Slider(
+            value = settings.referenceA4.toFloat(),
+            onValueChange = { actions.onReferenceA4(it.roundToInt().toDouble()) },
+            valueRange = TunerSettings.MIN_A4.toFloat()..TunerSettings.MAX_A4.toFloat(),
+            steps = (TunerSettings.MAX_A4 - TunerSettings.MIN_A4).toInt() - 1,
+            modifier = Modifier.semantics { stateDescription = referenceText },
+            colors = SliderDefaults.colors(
+                thumbColor = AccentGreen,
+                activeTrackColor = AccentGreen,
+                inactiveTrackColor = DarkCard,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent
+            )
+        )
+        Divider()
+
+        SectionTitle(R.string.tolerance)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TunerSettings.TOLERANCE_OPTIONS.forEach { cents ->
+                Choice(
+                    label = stringResource(R.string.tolerance_value, cents.roundToInt()),
+                    selected = settings.toleranceCents == cents
+                ) { actions.onTolerance(cents) }
+            }
+        }
+        Divider()
+
+        SectionTitle(R.string.note_names)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Choice(stringResource(R.string.sharps), selected = !settings.useFlats) { actions.onUseFlats(false) }
+            Choice(stringResource(R.string.flats), selected = settings.useFlats) { actions.onUseFlats(true) }
+        }
+        Divider()
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = settings.vibration,
+                    role = Role.Switch,
+                    onClick = { actions.onVibration(!settings.vibration) }
+                )
+                .padding(vertical = 8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.vibrate_in_tune),
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = settings.vibration,
+                onCheckedChange = null,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = DarkBackground,
+                    checkedTrackColor = AccentGreen,
+                    uncheckedTrackColor = DarkCard
+                )
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SheetScaffold(
+    sheetState: SheetState,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         containerColor = DarkSurface
     ) {
         Column(
@@ -73,95 +188,9 @@ fun SettingsSheet(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            SectionTitle(R.string.tuning)
-            Column(Modifier.selectableGroup()) {
-                Tuning.entries.forEach { tuning ->
-                    TuningRow(tuning, selected = tuning == settings.tuning, useFlats = settings.useFlats) {
-                        actions.onTuning(tuning)
-                    }
-                }
-            }
-            Divider()
-
-            SectionTitle(R.string.reference_pitch)
-            val referenceText = stringResource(R.string.reference_value, settings.referenceA4.roundToInt())
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = referenceText,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                if (settings.referenceA4 != Note.DEFAULT_A4) {
-                    TextButton(onClick = { actions.onReferenceA4(Note.DEFAULT_A4) }) {
-                        Text(stringResource(R.string.reset_to_440), color = AccentGreen)
-                    }
-                }
-            }
-            Slider(
-                value = settings.referenceA4.toFloat(),
-                onValueChange = { actions.onReferenceA4(it.roundToInt().toDouble()) },
-                valueRange = TunerSettings.MIN_A4.toFloat()..TunerSettings.MAX_A4.toFloat(),
-                steps = (TunerSettings.MAX_A4 - TunerSettings.MIN_A4).toInt() - 1,
-                modifier = Modifier.semantics { stateDescription = referenceText },
-                colors = SliderDefaults.colors(
-                    thumbColor = AccentGreen,
-                    activeTrackColor = AccentGreen,
-                    inactiveTrackColor = DarkCard,
-                    activeTickColor = Color.Transparent,
-                    inactiveTickColor = Color.Transparent
-                )
-            )
-            Divider()
-
-            SectionTitle(R.string.tolerance)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TunerSettings.TOLERANCE_OPTIONS.forEach { cents ->
-                    Choice(
-                        label = stringResource(R.string.tolerance_value, cents.roundToInt()),
-                        selected = settings.toleranceCents == cents
-                    ) { actions.onTolerance(cents) }
-                }
-            }
-            Divider()
-
-            SectionTitle(R.string.note_names)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Choice(stringResource(R.string.sharps), selected = !settings.useFlats) { actions.onUseFlats(false) }
-                Choice(stringResource(R.string.flats), selected = settings.useFlats) { actions.onUseFlats(true) }
-            }
-            Divider()
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectable(
-                        selected = settings.vibration,
-                        role = Role.Switch,
-                        onClick = { actions.onVibration(!settings.vibration) }
-                    )
-                    .padding(vertical = 8.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.vibrate_in_tune),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextPrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = settings.vibration,
-                    onCheckedChange = null,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = DarkBackground,
-                        checkedTrackColor = AccentGreen,
-                        uncheckedTrackColor = DarkCard
-                    )
-                )
-            }
-        }
+                .padding(bottom = 24.dp),
+            content = content
+        )
     }
 }
 

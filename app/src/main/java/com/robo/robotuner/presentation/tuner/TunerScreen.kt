@@ -45,10 +45,13 @@ import com.robo.robotuner.presentation.components.StatusMessage
 import com.robo.robotuner.presentation.components.StringSelector
 import com.robo.robotuner.presentation.components.TuneHint
 import com.robo.robotuner.presentation.components.TunerGauge
+import com.robo.robotuner.presentation.components.TuningSheet
 import com.robo.robotuner.presentation.settings.SettingsViewModel
 import com.robo.robotuner.ui.theme.DarkBackground
 
 private enum class MicPermission { Unknown, Denied, PermanentlyDenied }
+
+private enum class Sheet { None, Tunings, Settings }
 
 private const val MAX_GAUGE_SIZE = 380
 
@@ -60,7 +63,7 @@ fun TunerScreen(modifier: Modifier = Modifier) {
 
     var permission by rememberSaveable { mutableStateOf(MicPermission.Unknown) }
     var autoStartDone by rememberSaveable { mutableStateOf(false) }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var sheet by rememberSaveable { mutableStateOf(Sheet.None) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permission = when {
@@ -117,25 +120,35 @@ fun TunerScreen(modifier: Modifier = Modifier) {
         state = state,
         onMicClick = onMicClick,
         onStringClick = viewModel::toggleStringLock,
-        onOpenSettings = { showSettings = true },
+        onOpenTunings = { sheet = Sheet.Tunings },
+        onOpenSettings = { sheet = Sheet.Settings },
         status = { StatusMessage(statusMessage, statusAction) },
         modifier = modifier
     )
 
-    if (showSettings) {
+    if (sheet != Sheet.None) {
         val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(context))
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
-        SettingsSheet(
-            settings = settings,
-            actions = SettingsActions(
-                onTuning = settingsViewModel::setTuning,
-                onReferenceA4 = settingsViewModel::setReferenceA4,
-                onTolerance = settingsViewModel::setTolerance,
-                onVibration = settingsViewModel::setVibration,
-                onUseFlats = settingsViewModel::setUseFlats
-            ),
-            onDismiss = { showSettings = false }
-        )
+        val closeSheet = { sheet = Sheet.None }
+        when (sheet) {
+            Sheet.Tunings -> TuningSheet(
+                selected = settings.tuning,
+                useFlats = settings.useFlats,
+                onSelect = settingsViewModel::setTuning,
+                onDismiss = closeSheet
+            )
+            Sheet.Settings -> SettingsSheet(
+                settings = settings,
+                actions = SettingsActions(
+                    onReferenceA4 = settingsViewModel::setReferenceA4,
+                    onTolerance = settingsViewModel::setTolerance,
+                    onVibration = settingsViewModel::setVibration,
+                    onUseFlats = settingsViewModel::setUseFlats
+                ),
+                onDismiss = closeSheet
+            )
+            Sheet.None -> Unit
+        }
     }
 }
 
@@ -144,6 +157,7 @@ private fun TunerContent(
     state: TunerUiState,
     onMicClick: () -> Unit,
     onStringClick: (Int) -> Unit,
+    onOpenTunings: () -> Unit,
     onOpenSettings: () -> Unit,
     status: @Composable () -> Unit,
     modifier: Modifier = Modifier
@@ -165,7 +179,7 @@ private fun TunerContent(
             )
         }
         val topBar: @Composable () -> Unit = {
-            TopBar(tuning = state.settings.tuning, onOpenSettings = onOpenSettings)
+            TopBar(tuning = state.settings.tuning, onOpenTunings = onOpenTunings, onOpenSettings = onOpenSettings)
         }
         val controls: @Composable ColumnScope.() -> Unit = {
             status()

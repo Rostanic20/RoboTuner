@@ -26,6 +26,7 @@ import com.robo.robotuner.ui.theme.TextSecondary
 @Composable
 fun TopBar(
     tuning: Tuning,
+    onOpenTunings: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -41,7 +42,7 @@ fun TopBar(
             modifier = Modifier.weight(1f)
         )
         AssistChip(
-            onClick = onOpenSettings,
+            onClick = onOpenTunings,
             label = { Text(tuningName) },
             trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
             colors = AssistChipDefaults.assistChipColors(labelColor = TextPrimary, trailingIconContentColor = TextSecondary),
