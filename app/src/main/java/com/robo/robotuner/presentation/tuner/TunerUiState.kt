@@ -12,9 +12,11 @@ data class TunerUiState(
     val settings: TunerSettings = TunerSettings(),
     val lockedString: Int? = null,
     val tunedStrings: Set<Int> = emptySet(),
+    val playingString: Int? = null,
     val error: String? = null
 ) {
-    val strings: List<GuitarString> get() = settings.tuning.strings
+    val strings: List<GuitarString> get() = settings.strings
+    val allTuned: Boolean get() = strings.indices.all { it in tunedStrings }
 }
 
 data class TunerReading(
@@ -31,7 +33,7 @@ data class TunerReading(
 
     companion object {
         fun from(pitch: DetectedPitch, settings: TunerSettings, lockedString: Int?): TunerReading {
-            val strings = settings.tuning.strings
+            val strings = settings.strings
             val target = lockedString?.takeIf { it in strings.indices }
                 ?: GuitarString.closestIndex(strings, pitch.frequency, settings.referenceA4)
             if (target == null) {

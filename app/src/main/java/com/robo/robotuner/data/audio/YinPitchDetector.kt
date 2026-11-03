@@ -4,9 +4,9 @@ import kotlin.math.ceil
 
 class YinPitchDetector {
 
-    fun detectPitch(samples: FloatArray, sampleRate: Int): Double? {
+    fun detectPitch(samples: FloatArray, sampleRate: Int, lowestFrequency: Double): Double? {
         val minTau = (sampleRate / MAX_FREQUENCY).toInt().coerceAtLeast(2)
-        val maxTau = ceil(sampleRate / MIN_FREQUENCY).toInt()
+        val maxTau = ceil(sampleRate / lowestFrequency).toInt()
         val window = samples.size - maxTau - 1
         if (window < MIN_WINDOW) return null
 
@@ -55,7 +55,6 @@ class YinPitchDetector {
     }
 
     companion object {
-        private const val MIN_FREQUENCY = 60.0
         private const val MAX_FREQUENCY = 1400.0
         private const val THRESHOLD = 0.15
         private const val MIN_WINDOW = 2048

@@ -3,6 +3,8 @@ package com.robo.robotuner.presentation.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -25,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -46,8 +50,11 @@ fun StringSelector(
     reading: TunerReading?,
     lockedString: Int?,
     tunedStrings: Set<Int>,
+    playingString: Int?,
+    allTuned: Boolean,
     useFlats: Boolean,
     onStringClick: (Int) -> Unit,
+    onStringLongClick: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -59,28 +66,31 @@ fun StringSelector(
                 StringChip(
                     number = strings.size - index,
                     string = string,
-                    isActive = reading?.stringIndex == index,
+                    isActive = reading?.stringIndex == index || playingString == index,
                     isInTune = reading?.stringIndex == index && reading.isInTune,
                     isLocked = lockedString == index,
                     isTuned = index in tunedStrings,
+                    isPlaying = playingString == index,
                     useFlats = useFlats,
-                    onClick = { onStringClick(index) }
+                    onClick = { onStringClick(index) },
+                    onLongClick = { onStringLongClick(index) }
                 )
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = if (lockedString == null) {
-                stringResource(R.string.mode_auto)
-            } else {
-                stringResource(R.string.mode_locked, strings.size - lockedString)
+            text = when {
+                allTuned -> stringResource(R.string.all_tuned)
+                lockedString == null -> stringResource(R.string.mode_auto)
+                else -> stringResource(R.string.mode_locked, strings.size - lockedString)
             },
             style = MaterialTheme.typography.labelSmall,
-            color = TextMuted
+            color = if (allTuned) AccentGreen else TextMuted
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StringChip(
     number: Int,
@@ -89,8 +99,10 @@ private fun StringChip(
     isInTune: Boolean,
     isLocked: Boolean,
     isTuned: Boolean,
+    isPlaying: Boolean,
     useFlats: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val background by animateColorAsState(
         targetValue = when {
@@ -109,8 +121,10 @@ private fun StringChip(
     val states = listOfNotNull(
         stringResource(R.string.string_state_locked).takeIf { isLocked },
         stringResource(R.string.string_state_tuned).takeIf { isTuned },
-        stringResource(R.string.string_state_active).takeIf { isActive }
+        stringResource(R.string.string_state_reference).takeIf { isPlaying },
+        stringResource(R.string.string_state_active).takeIf { isActive && !isPlaying }
     )
+    val playLabel = stringResource(R.string.play_reference)
     val description = stringResource(
         R.string.string_chip_description,
         number,
@@ -126,12 +140,13 @@ private fun StringChip(
         Spacer(Modifier.height(4.dp))
         Box {
             Surface(
-                onClick = onClick,
                 shape = CircleShape,
                 color = background,
                 border = if (isLocked) BorderStroke(2.dp, AccentGreen) else null,
                 modifier = Modifier
                     .size(48.dp)
+                    .clip(CircleShape)
+                    .combinedClickable(onLongClickLabel = playLabel, onLongClick = onLongClick, onClick = onClick)
                     .semantics { contentDescription = description }
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -144,6 +159,7 @@ private fun StringChip(
                 }
             }
             val badge = when {
+                isPlaying -> Icons.Filled.PlayArrow
                 isLocked -> Icons.Filled.Lock
                 isTuned -> Icons.Filled.Check
                 else -> null

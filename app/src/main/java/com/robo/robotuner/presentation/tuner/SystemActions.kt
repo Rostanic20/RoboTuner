@@ -27,17 +27,21 @@ internal fun Context.openAppSettings() {
     )
 }
 
+internal fun Context.vibrateInTune() = vibrate(longArrayOf(0, 50))
+
+internal fun Context.vibrateAllTuned() = vibrate(longArrayOf(0, 40, 80, 40, 80, 120))
+
 @Suppress("DEPRECATION")
-internal fun Context.vibrateInTune() {
+private fun Context.vibrate(pattern: LongArray) {
     val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
     } else {
         getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+        vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
     } else {
-        vibrator.vibrate(50)
+        vibrator.vibrate(pattern, -1)
     }
 }
 

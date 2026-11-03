@@ -15,8 +15,8 @@ class DetectPitchUseCase(
     private val pitchDetectorRepository: PitchDetectorRepository,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
-    fun execute(): Flow<TunerState> = flow {
-        pitchDetectorRepository.reset()
+    fun execute(lowestFrequency: Double): Flow<TunerState> = flow {
+        pitchDetectorRepository.reset(lowestFrequency)
         audioRepository.startListening().collect { samples ->
             val frequency = pitchDetectorRepository.detectPitch(samples)
             emit(if (frequency != null) TunerState.Detected(frequency) else TunerState.Listening)

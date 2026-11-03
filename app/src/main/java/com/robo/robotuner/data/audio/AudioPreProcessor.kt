@@ -31,6 +31,6 @@ class AudioPreProcessor(sampleRate: Int) {
     }
 
     companion object {
-        private const val HIGH_PASS_CUTOFF = 30f
+        private const val HIGH_PASS_CUTOFF = 20f
     }
 }

@@ -23,6 +23,8 @@ class SettingsViewModel(private val repository: SettingsRepository) : ViewModel(
 
     fun setUseFlats(useFlats: Boolean) = repository.update { it.copy(useFlats = useFlats) }
 
+    fun setCapo(fret: Int) = repository.update { it.copy(capo = fret) }
+
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {

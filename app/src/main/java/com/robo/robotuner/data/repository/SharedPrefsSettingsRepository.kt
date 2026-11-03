@@ -28,6 +28,7 @@ class SharedPrefsSettingsRepository private constructor(context: Context) : Sett
             putFloat(KEY_TOLERANCE, updated.toleranceCents.toFloat())
             putBoolean(KEY_VIBRATION, updated.vibration)
             putBoolean(KEY_FLATS, updated.useFlats)
+            putInt(KEY_CAPO, updated.capo)
         }
     }
 
@@ -38,7 +39,8 @@ class SharedPrefsSettingsRepository private constructor(context: Context) : Sett
             referenceA4 = prefs.getFloat(KEY_A4, defaults.referenceA4.toFloat()).toDouble(),
             toleranceCents = prefs.getFloat(KEY_TOLERANCE, defaults.toleranceCents.toFloat()).toDouble(),
             vibration = prefs.getBoolean(KEY_VIBRATION, defaults.vibration),
-            useFlats = prefs.getBoolean(KEY_FLATS, defaults.useFlats)
+            useFlats = prefs.getBoolean(KEY_FLATS, defaults.useFlats),
+            capo = prefs.getInt(KEY_CAPO, defaults.capo)
         ).sanitized()
     }
 
@@ -57,5 +59,6 @@ class SharedPrefsSettingsRepository private constructor(context: Context) : Sett
         private const val KEY_TOLERANCE = "tolerance_cents"
         private const val KEY_VIBRATION = "vibration"
         private const val KEY_FLATS = "use_flats"
+        private const val KEY_CAPO = "capo"
     }
 }

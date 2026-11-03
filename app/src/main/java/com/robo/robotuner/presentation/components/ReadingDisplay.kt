@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import com.robo.robotuner.R
+import com.robo.robotuner.domain.model.GuitarString
 import com.robo.robotuner.presentation.tuner.TunerReading
 import com.robo.robotuner.ui.theme.TextMuted
 import com.robo.robotuner.ui.theme.TextSecondary
@@ -26,6 +27,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ReadingDisplay(
     reading: TunerReading?,
+    playing: GuitarString?,
     isListening: Boolean,
     useFlats: Boolean,
     gaugeSize: Dp,
@@ -41,7 +43,11 @@ fun ReadingDisplay(
 
     if (reading == null) {
         Text(
-            text = stringResource(if (isListening) R.string.play_a_string else R.string.tuner_off),
+            text = when {
+                playing != null -> stringResource(R.string.playing_reference, "${playing.note.label(useFlats)}${playing.octave}")
+                isListening -> stringResource(R.string.play_a_string)
+                else -> stringResource(R.string.tuner_off)
+            },
             style = MaterialTheme.typography.bodyLarge,
             color = TextMuted,
             modifier = modifier

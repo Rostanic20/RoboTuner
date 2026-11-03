@@ -1,6 +1,7 @@
 package com.robo.robotuner.presentation.tuner
 
 import android.Manifest
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -98,7 +99,13 @@ fun TunerScreen(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(viewModel) {
-        viewModel.inTuneEvents.collect { context.vibrateInTune() }
+        viewModel.events.collect { event ->
+            when (event) {
+                TunerEvent.STRING_TUNED -> context.vibrateInTune()
+                TunerEvent.ALL_TUNED -> context.vibrateAllTuned()
+                TunerEvent.TONE_FAILED -> Toast.makeText(context, R.string.tone_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val onMicClick = {
@@ -120,6 +127,7 @@ fun TunerScreen(modifier: Modifier = Modifier) {
         state = state,
         onMicClick = onMicClick,
         onStringClick = viewModel::toggleStringLock,
+        onStringLongClick = viewModel::playReference,
         onOpenTunings = { sheet = Sheet.Tunings },
         onOpenSettings = { sheet = Sheet.Settings },
         status = { StatusMessage(statusMessage, statusAction) },
@@ -133,8 +141,10 @@ fun TunerScreen(modifier: Modifier = Modifier) {
         when (sheet) {
             Sheet.Tunings -> TuningSheet(
                 selected = settings.tuning,
+                capo = settings.capo,
                 useFlats = settings.useFlats,
                 onSelect = settingsViewModel::setTuning,
+                onCapo = settingsViewModel::setCapo,
                 onDismiss = closeSheet
             )
             Sheet.Settings -> SettingsSheet(
@@ -157,6 +167,7 @@ private fun TunerContent(
     state: TunerUiState,
     onMicClick: () -> Unit,
     onStringClick: (Int) -> Unit,
+    onStringLongClick: (Int) -> Unit,
     onOpenTunings: () -> Unit,
     onOpenSettings: () -> Unit,
     status: @Composable () -> Unit,
@@ -173,13 +184,21 @@ private fun TunerContent(
                 reading = state.reading,
                 lockedString = state.lockedString,
                 tunedStrings = state.tunedStrings,
+                playingString = state.playingString,
+                allTuned = state.allTuned,
                 useFlats = state.settings.useFlats,
                 onStringClick = onStringClick,
+                onStringLongClick = onStringLongClick,
                 modifier = m
             )
         }
         val topBar: @Composable () -> Unit = {
-            TopBar(tuning = state.settings.tuning, onOpenTunings = onOpenTunings, onOpenSettings = onOpenSettings)
+            TopBar(
+                tuning = state.settings.tuning,
+                capo = state.settings.capo,
+                onOpenTunings = onOpenTunings,
+                onOpenSettings = onOpenSettings
+            )
         }
         val controls: @Composable ColumnScope.() -> Unit = {
             status()
@@ -235,6 +254,7 @@ private fun GaugeArea(state: TunerUiState, modifier: Modifier) {
             )
             ReadingDisplay(
                 reading = state.reading,
+                playing = state.playingString?.let(state.strings::getOrNull),
                 isListening = state.isListening,
                 useFlats = state.settings.useFlats,
                 gaugeSize = side

@@ -26,11 +26,12 @@ import com.robo.robotuner.ui.theme.TextSecondary
 @Composable
 fun TopBar(
     tuning: Tuning,
+    capo: Int,
     onOpenTunings: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val tuningName = stringResource(tuning.nameRes())
+    val tuningName = tuningTitle(tuning, capo)
     val changeTuning = stringResource(R.string.change_tuning, tuningName)
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(

@@ -6,6 +6,11 @@ data class GuitarString(val note: Note, val octave: Int) {
 
     fun frequency(referenceA4: Double = Note.DEFAULT_A4): Double = Note.getFrequency(note, octave, referenceA4)
 
+    fun transposed(semitones: Int): GuitarString {
+        val total = octave * Note.entries.size + note.ordinal + semitones
+        return GuitarString(Note.entries[Math.floorMod(total, Note.entries.size)], Math.floorDiv(total, Note.entries.size))
+    }
+
     companion object {
         private const val MATCH_CENTS = 100.0
 

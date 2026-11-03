@@ -27,6 +27,13 @@ class AudioPreProcessorTest {
     }
 
     @Test
+    fun `passes bass drop C with most of its level`() {
+        val input = TestUtils.generateSineWave(32.70, numSamples = SAMPLE_RATE)
+        val ratio = rms(processor.process(input).takeLast(8192).toFloatArray()) / rms(input)
+        assertTrue("gain was $ratio", ratio > 0.8)
+    }
+
+    @Test
     fun `keeps the signal level instead of normalising it`() {
         val quiet = TestUtils.generateSineWave(440.0, amplitude = 0.01f)
         assertEquals(rms(quiet), rms(processor.process(quiet)), 0.001)

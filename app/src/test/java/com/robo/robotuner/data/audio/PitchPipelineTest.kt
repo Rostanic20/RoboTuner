@@ -5,7 +5,9 @@ import com.robo.robotuner.data.audio.TestUtils.HOP_SIZE
 import com.robo.robotuner.data.audio.TestUtils.SAMPLE_RATE
 import com.robo.robotuner.data.audio.TestUtils.ToneStream
 import com.robo.robotuner.data.audio.TestUtils.centsError
+import com.robo.robotuner.domain.model.Instrument
 import com.robo.robotuner.domain.model.Note
+import com.robo.robotuner.domain.model.Tuning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -34,8 +36,21 @@ class PitchPipelineTest {
     @Test
     fun `every guitar string with a weak fundamental reads in tune within half a cent`() {
         for (frequency in GUITAR_STRINGS) {
-            pipeline.reset()
+            pipeline.reset(Instrument.GUITAR.lowestDetectableHz)
             val result = tone(10, frequency, guitar).last()
+            assertNotNull("no pitch for $frequency Hz", result)
+            val error = abs(centsError(result!!, frequency))
+            assertTrue("$frequency Hz off by $error cents", error < 0.5)
+        }
+    }
+
+    @Test
+    fun `every bass string without its fundamental reads in tune within half a cent`() {
+        val phoneMicBass = listOf(0.0, 1.0, 0.7, 0.5, 0.35, 0.2, 0.15, 0.1)
+        val strings = Tuning.entries.filter { it.instrument == Instrument.BASS }.flatMap { it.strings }.distinct()
+        for (frequency in strings.map { it.frequency() }) {
+            pipeline.reset(Instrument.BASS.lowestDetectableHz)
+            val result = tone(10, frequency, phoneMicBass).last()
             assertNotNull("no pitch for $frequency Hz", result)
             val error = abs(centsError(result!!, frequency))
             assertTrue("$frequency Hz off by $error cents", error < 0.5)

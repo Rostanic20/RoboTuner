@@ -26,8 +26,9 @@ class SettingsViewModelTest {
         viewModel.setTolerance(5.0)
         viewModel.setVibration(false)
         viewModel.setUseFlats(true)
+        viewModel.setCapo(2)
         assertEquals(
-            TunerSettings(Tuning.OPEN_G, referenceA4 = 442.0, toleranceCents = 5.0, vibration = false, useFlats = true),
+            TunerSettings(Tuning.OPEN_G, referenceA4 = 442.0, toleranceCents = 5.0, vibration = false, useFlats = true, capo = 2),
             viewModel.settings.value
         )
     }

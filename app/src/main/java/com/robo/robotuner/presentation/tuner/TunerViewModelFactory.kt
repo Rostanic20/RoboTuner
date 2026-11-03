@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.robo.robotuner.data.audio.AudioRecorder
+import com.robo.robotuner.data.audio.AudioTrackTonePlayer
 import com.robo.robotuner.data.audio.PitchPipeline
 import com.robo.robotuner.data.repository.AudioRepositoryImpl
 import com.robo.robotuner.data.repository.SharedPrefsSettingsRepository
@@ -22,7 +23,11 @@ class TunerViewModelFactory(
                 audioRepository = AudioRepositoryImpl(audioRecorder),
                 pitchDetectorRepository = PitchPipeline(audioRecorder.sampleRate)
             )
-            return TunerViewModel(detectPitchUseCase, SharedPrefsSettingsRepository.get(appContext)) as T
+            return TunerViewModel(
+                detectPitchUseCase,
+                SharedPrefsSettingsRepository.get(appContext),
+                AudioTrackTonePlayer(audioRecorder.sampleRate)
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

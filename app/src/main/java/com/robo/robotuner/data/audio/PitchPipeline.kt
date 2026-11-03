@@ -1,5 +1,6 @@
 package com.robo.robotuner.data.audio
 
+import com.robo.robotuner.domain.model.Instrument
 import com.robo.robotuner.domain.repository.PitchDetectorRepository
 import kotlin.math.sqrt
 
@@ -10,15 +11,17 @@ class PitchPipeline(private val sampleRate: Int) : PitchDetectorRepository {
     private val tracker = PitchTracker()
     private val window = FloatArray(WINDOW_SIZE)
     private var filled = 0
+    private var lowestFrequency = Instrument.GUITAR.lowestDetectableHz
 
     override fun detectPitch(samples: FloatArray): Double? {
         append(preProcessor.process(samples))
         if (filled < WINDOW_SIZE) return null
-        val reading = if (rms(window) >= MIN_RMS) detector.detectPitch(window, sampleRate) else null
+        val reading = if (rms(window) >= MIN_RMS) detector.detectPitch(window, sampleRate, lowestFrequency) else null
         return tracker.update(reading)
     }
 
-    override fun reset() {
+    override fun reset(lowestFrequency: Double) {
+        this.lowestFrequency = lowestFrequency
         preProcessor.reset()
         tracker.reset()
         window.fill(0f)
